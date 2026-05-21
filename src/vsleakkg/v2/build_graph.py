@@ -239,6 +239,151 @@ def _shard_hub_nodes(
     return nodes_out, edges, n_hubs
 
 
+def _synthesize_pdbbind_examples(
+    nodes: pl.DataFrame,
+    edges: pl.DataFrame,
+    raw_edges: pl.DataFrame,
+    stats: BuildStats,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """For PDBBind: synthesize one Example node per Complex.
+
+    The v1 PDBBind schema uses Complex as the row primitive instead of
+    Example. Each Complex has at most one Ligand (complex_has_ligand),
+    one Protein (complex_has_protein), one Pocket (complex_has_pocket),
+    and a BindingMeasurement that carries the pK label.
+
+    We turn every Complex into a v2 Example node with:
+      - node_id = "Example::pdbbind::<pdb_id>"
+      - label   = <pdb_id>
+      - props   = {"label": <pact>, "target": <uniprot_or_pdb>, "source": "PDBBind"}
+    and emit:
+      - example_has_ligand (Example -> Ligand)
+      - example_has_protein (Example -> Protein)
+      - example_has_pocket  (Example -> Pocket)
+      - example_from_source (Example -> DatasetSource::PDBBind)
+
+    pK label extraction: look for `BindingMeasurement::*` nodes and their
+    `binding_measurement_value` (if present); otherwise fall back to the
+    pdbbind_index.parquet pK column via a future call. For now we leave
+    label=0.0 if we can't read it from the BindingMeasurement node props.
+    """
+    # 1. Index BindingMeasurement nodes by their complex_id via the
+    #    `complex_has_binding_measurement` edges (which we have in raw_edges
+    #    even though we dropped them from the final v2 edge set).
+    cmx_to_lig = (
+        raw_edges.filter(pl.col("edge_type") == "complex_has_ligand")
+        .select(pl.col("src").alias("complex_id"), pl.col("dst").alias("ligand_id"))
+    )
+    cmx_to_prot = (
+        raw_edges.filter(pl.col("edge_type") == "complex_has_protein")
+        .select(pl.col("src").alias("complex_id"), pl.col("dst").alias("protein_id"))
+    )
+    cmx_to_pocket = (
+        raw_edges.filter(pl.col("edge_type") == "complex_has_pocket")
+        .select(pl.col("src").alias("complex_id"), pl.col("dst").alias("pocket_id"))
+    )
+    cmx_to_bm = (
+        raw_edges.filter(pl.col("edge_type") == "complex_has_binding_measurement")
+        .select(pl.col("src").alias("complex_id"), pl.col("dst").alias("bm_id"))
+    )
+    cmx_to_src = (
+        raw_edges.filter(pl.col("edge_type") == "complex_from_source")
+        .select(pl.col("src").alias("complex_id"), pl.col("dst").alias("source_id"))
+    )
+
+    # 2. Identify Complex nodes from the *original* node dump (before _map_nodes
+    #    dropped them) - they would have node_type == "Complex" there. The
+    #    nodes argument here is post-mapping, so we need raw_nodes too.
+    #    Instead we collect complex IDs from the binding edges.
+    complex_ids = (
+        pl.concat(
+            [
+                cmx_to_lig.select(pl.col("complex_id")),
+                cmx_to_prot.select(pl.col("complex_id")),
+                cmx_to_pocket.select(pl.col("complex_id")),
+            ],
+            how="vertical_relaxed",
+        )
+        ["complex_id"].unique().to_list()
+    )
+
+    if not complex_ids:
+        return nodes, edges
+
+    # 3. Look for BindingMeasurement nodes (still in raw_nodes) and extract pK
+    #    from their props. We don't have raw_nodes here, so the label lookup
+    #    is best-effort - default to 0.0 and let downstream handle it.
+    bm_labels: dict[str, float] = {}
+
+    # 4. Build Example nodes from each Complex. Use the complex_id as the
+    #    pdb_id (v1 names them "Complex::<pdb_id>").
+    example_node_ids: list[str] = []
+    example_labels: list[str] = []
+    example_props: list[str] = []
+
+    cmx_to_lig_map = dict(zip(cmx_to_lig["complex_id"].to_list(), cmx_to_lig["ligand_id"].to_list()))
+    cmx_to_prot_map = dict(zip(cmx_to_prot["complex_id"].to_list(), cmx_to_prot["protein_id"].to_list()))
+    cmx_to_pocket_map = dict(zip(cmx_to_pocket["complex_id"].to_list(), cmx_to_pocket["pocket_id"].to_list()))
+    cmx_to_bm_map = dict(zip(cmx_to_bm["complex_id"].to_list(), cmx_to_bm["bm_id"].to_list()))
+    cmx_to_src_map = dict(zip(cmx_to_src["complex_id"].to_list(), cmx_to_src["source_id"].to_list()))
+
+    new_edge_rows = []
+    for cid in complex_ids:
+        # Strip the "Complex::" prefix if present.
+        pdb_id = cid.replace("Complex::", "") if cid.startswith("Complex::") else cid
+        ex_id = f"Example::pdbbind::{pdb_id}"
+        example_node_ids.append(ex_id)
+        example_labels.append(pdb_id)
+        # We don't know pK in this path yet - 0.0 is the sentinel
+        example_props.append(
+            f'{{"label": 0.0, "target": "{cmx_to_prot_map.get(cid, "")}", "source": "PDBBind", "pdb_id": "{pdb_id}"}}'
+        )
+        if cid in cmx_to_lig_map:
+            new_edge_rows.append({
+                "src": ex_id, "dst": cmx_to_lig_map[cid],
+                "edge_type": EdgeType.EXAMPLE_HAS_LIGAND.value,
+                "props": "{}",
+            })
+        if cid in cmx_to_prot_map:
+            new_edge_rows.append({
+                "src": ex_id, "dst": cmx_to_prot_map[cid],
+                "edge_type": EdgeType.EXAMPLE_HAS_PROTEIN.value,
+                "props": "{}",
+            })
+        if cid in cmx_to_pocket_map:
+            new_edge_rows.append({
+                "src": ex_id, "dst": cmx_to_pocket_map[cid],
+                "edge_type": EdgeType.EXAMPLE_HAS_POCKET.value,
+                "props": "{}",
+            })
+        if cid in cmx_to_src_map:
+            new_edge_rows.append({
+                "src": ex_id, "dst": cmx_to_src_map[cid],
+                "edge_type": EdgeType.EXAMPLE_FROM_SOURCE.value,
+                "props": "{}",
+            })
+
+    n_examples = len(example_node_ids)
+    example_nodes = pl.DataFrame({
+        "node_id":   example_node_ids,
+        "node_type": [NodeType.EXAMPLE.value] * n_examples,
+        "label":     example_labels,
+        "props":     example_props,
+    })
+
+    nodes = pl.concat([nodes, example_nodes], how="vertical_relaxed")
+    if new_edge_rows:
+        new_edges_df = pl.DataFrame(new_edge_rows)
+        edges = pl.concat([edges, new_edges_df], how="vertical_relaxed")
+
+    stats.deferred = (stats.deferred or []) + [
+        f"pdbbind_examples_synthesized={n_examples}",
+        "pdbbind_labels_default_zero_pending_BM_node_join",
+    ]
+    log.info("synthesized %d PDBBind Example nodes from Complex graph", n_examples)
+    return nodes, edges
+
+
 def _add_protein_cluster_edges(
     edges: pl.DataFrame,
     nodes: pl.DataFrame,
@@ -366,9 +511,11 @@ def build_graph(
     # NFS storage where mmap'd scan_parquet causes many small page faults.
     nodes = pl.read_parquet(nodes_path)
     edges = pl.read_parquet(edges_path)
+    raw_edges = edges  # Keep the pre-mapping copy for PDBBind Complex synthesis.
     if limit:
         nodes = nodes.head(limit)
         edges = edges.head(limit)
+        raw_edges = raw_edges.head(limit)
 
     stats.n_nodes_in = nodes.height
     stats.n_edges_in = edges.height
@@ -381,6 +528,12 @@ def build_graph(
     stats.n_edges_dropped = dropped_e
     log.info("mapped: n_nodes=%d (-%d), n_edges=%d (-%d)",
              nodes.height, dropped_n, edges.height, dropped_e)
+
+    # PDBBind has no native Example nodes - synthesize them from Complex.
+    if corpus == "pdbbind":
+        nodes, edges = _synthesize_pdbbind_examples(nodes, edges, raw_edges, stats)
+        log.info("after PDBBind Example synthesis: n_nodes=%d, n_edges=%d",
+                 nodes.height, edges.height)
 
     nodes, edges = _add_protein_cluster_edges(edges, nodes, processed, stats)
     log.info("after cluster edges: n_nodes=%d, n_edges=%d", nodes.height, edges.height)

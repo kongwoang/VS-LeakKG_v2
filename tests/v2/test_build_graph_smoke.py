@@ -131,3 +131,105 @@ def test_build_graph_writes_stats(tmp_path, monkeypatch):
     assert "n_edges_out" in keys
     # deferred markers present
     assert any(k.startswith("deferred::") for k in keys)
+
+
+def _write_pdbbind_minimal(tmp_path):
+    """Build a minimal v1-shaped (pdbbind_nodes, pdbbind_edges) pair.
+
+    Has 2 Complexes, each with a Ligand + Protein + Pocket + BindingMeasurement,
+    but NO Example nodes (mirrors the real PDBBind layout).
+    """
+    nodes = pl.DataFrame(
+        {
+            "node_id": [
+                "Complex::1abc", "Complex::2xyz",
+                "Ligand::L1", "Ligand::L2",
+                "Protein::P1", "Protein::P2",
+                "Pocket::pkt1", "Pocket::pkt2",
+                "BindingMeasurement::B1", "BindingMeasurement::B2",
+                "DatasetSource::PDBBind",
+            ],
+            "node_type": [
+                "Complex", "Complex",
+                "Ligand", "Ligand",
+                "Protein", "Protein",
+                "Pocket", "Pocket",
+                "BindingMeasurement", "BindingMeasurement",
+                "DatasetSource",
+            ],
+            "label": [
+                "1abc", "2xyz",
+                "CCO", "c1ccccc1",
+                "MKT", "MGS",
+                "pkt1", "pkt2",
+                "B1", "B2",
+                "PDBBind",
+            ],
+            "props": ["{}"] * 11,
+        }
+    )
+    edges = pl.DataFrame(
+        {
+            "src": [
+                "Complex::1abc", "Complex::2xyz",
+                "Complex::1abc", "Complex::2xyz",
+                "Complex::1abc", "Complex::2xyz",
+                "Complex::1abc", "Complex::2xyz",
+                "Complex::1abc", "Complex::2xyz",
+            ],
+            "dst": [
+                "Ligand::L1", "Ligand::L2",
+                "Protein::P1", "Protein::P2",
+                "Pocket::pkt1", "Pocket::pkt2",
+                "BindingMeasurement::B1", "BindingMeasurement::B2",
+                "DatasetSource::PDBBind", "DatasetSource::PDBBind",
+            ],
+            "edge_type": [
+                "complex_has_ligand", "complex_has_ligand",
+                "complex_has_protein", "complex_has_protein",
+                "complex_has_pocket", "complex_has_pocket",
+                "complex_has_binding_measurement", "complex_has_binding_measurement",
+                "complex_from_source", "complex_from_source",
+            ],
+            "props": ["{}"] * 10,
+        }
+    )
+    proc = tmp_path / "data" / "processed"
+    proc.mkdir(parents=True)
+    nodes.write_parquet(proc / "pdbbind_nodes.parquet")
+    edges.write_parquet(proc / "pdbbind_edges.parquet")
+    return proc
+
+
+def test_pdbbind_synthesizes_examples(tmp_path, monkeypatch):
+    """PDBBind has no Example nodes in v1 - we synthesize them from Complex."""
+    proc = _write_pdbbind_minimal(tmp_path)
+    monkeypatch.setenv("VSLEAKKG_V1_ROOT", str(tmp_path))
+
+    out = tmp_path / "out"
+    bg.build_graph(out, corpus="pdbbind")
+
+    nodes_df = pl.read_parquet(out / "v2_nodes.parquet")
+    edges_df = pl.read_parquet(out / "v2_edges.parquet")
+
+    # 2 Example nodes should have been synthesized
+    examples = nodes_df.filter(pl.col("node_type") == bg.NodeType.EXAMPLE.value)
+    assert examples.height == 2
+    example_ids = set(examples["node_id"].to_list())
+    assert "Example::pdbbind::1abc" in example_ids
+    assert "Example::pdbbind::2xyz" in example_ids
+
+    # The Example -> Ligand/Protein/Pocket/Source edges should be present
+    et = edges_df["edge_type"].to_list()
+    assert "example_has_ligand" in et
+    assert "example_has_protein" in et
+    assert "example_has_pocket" in et
+    assert "example_from_source" in et
+
+    # Verify a specific edge: Example::pdbbind::1abc -> Ligand::L1
+    e = edges_df.filter(
+        (pl.col("src") == "Example::pdbbind::1abc")
+        & (pl.col("edge_type") == "example_has_ligand")
+    )
+    assert e.height == 1
+    assert e[0, "dst"] == "Ligand::L1"
