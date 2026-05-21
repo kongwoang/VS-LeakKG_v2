@@ -243,6 +243,7 @@ def _synthesize_pdbbind_examples(
     nodes: pl.DataFrame,
     edges: pl.DataFrame,
     raw_edges: pl.DataFrame,
+    raw_nodes: pl.DataFrame,
     stats: BuildStats,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """For PDBBind: synthesize one Example node per Complex.
@@ -310,10 +311,30 @@ def _synthesize_pdbbind_examples(
     if not complex_ids:
         return nodes, edges
 
-    # 3. Look for BindingMeasurement nodes (still in raw_nodes) and extract pK
-    #    from their props. We don't have raw_nodes here, so the label lookup
-    #    is best-effort - default to 0.0 and let downstream handle it.
+    # 3. Look for BindingMeasurement nodes and extract pK from their props.
+    #    Props JSON contains keys like {"value": 1.7, "unit": "uM",
+    #    "p_value": 5.77, "p_name": "pKd", "comparator": "="}.
     bm_labels: dict[str, float] = {}
+    bm_rows = raw_nodes.filter(pl.col("node_type") == "BindingMeasurement")
+    if bm_rows.height:
+        import json as _json
+        for bm_id, props_str in zip(
+            bm_rows["node_id"].to_list(),
+            bm_rows["props"].to_list(),
+        ):
+            if not props_str:
+                continue
+            try:
+                d = _json.loads(props_str)
+            except (_json.JSONDecodeError, TypeError):
+                continue
+            pv = d.get("p_value")
+            if pv is None:
+                continue
+            try:
+                bm_labels[bm_id] = float(pv)
+            except (TypeError, ValueError):
+                continue
 
     # 4. Build Example nodes from each Complex. Use the complex_id as the
     #    pdb_id (v1 names them "Complex::<pdb_id>").
@@ -334,9 +355,11 @@ def _synthesize_pdbbind_examples(
         ex_id = f"Example::pdbbind::{pdb_id}"
         example_node_ids.append(ex_id)
         example_labels.append(pdb_id)
-        # We don't know pK in this path yet - 0.0 is the sentinel
+        # Look up the pK label via the BM node mapped to this complex.
+        bm_id = cmx_to_bm_map.get(cid)
+        pk = bm_labels.get(bm_id, 0.0) if bm_id else 0.0
         example_props.append(
-            f'{{"label": 0.0, "target": "{cmx_to_prot_map.get(cid, "")}", "source": "PDBBind", "pdb_id": "{pdb_id}"}}'
+            f'{{"label": {pk}, "target": "{cmx_to_prot_map.get(cid, "")}", "source": "PDBBind", "pdb_id": "{pdb_id}"}}'
         )
         if cid in cmx_to_lig_map:
             new_edge_rows.append({
@@ -511,11 +534,13 @@ def build_graph(
     # NFS storage where mmap'd scan_parquet causes many small page faults.
     nodes = pl.read_parquet(nodes_path)
     edges = pl.read_parquet(edges_path)
-    raw_edges = edges  # Keep the pre-mapping copy for PDBBind Complex synthesis.
+    raw_edges = edges  # Keep the pre-mapping copies for PDBBind Complex synthesis.
+    raw_nodes = nodes
     if limit:
         nodes = nodes.head(limit)
         edges = edges.head(limit)
         raw_edges = raw_edges.head(limit)
+        raw_nodes = raw_nodes.head(limit)
 
     stats.n_nodes_in = nodes.height
     stats.n_edges_in = edges.height
@@ -531,7 +556,7 @@ def build_graph(
 
     # PDBBind has no native Example nodes - synthesize them from Complex.
     if corpus == "pdbbind":
-        nodes, edges = _synthesize_pdbbind_examples(nodes, edges, raw_edges, stats)
+        nodes, edges = _synthesize_pdbbind_examples(nodes, edges, raw_edges, raw_nodes, stats)
         log.info("after PDBBind Example synthesis: n_nodes=%d, n_edges=%d",
                  nodes.height, edges.height)
 

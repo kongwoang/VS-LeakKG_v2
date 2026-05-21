@@ -92,15 +92,31 @@ def evaluate_ligand_only(
     test_feats = featurise_ligands(test[smiles_col].to_list())
     used_rdkit = _try_rdkit_fingerprints(train.head(1)[smiles_col].to_list()) is not None
 
+    y_train = train[label_col].to_numpy()
+    y = test[label_col].to_numpy()
+    # Guard: RandomForest.predict_proba returns shape (n, 1) when the
+    # training labels are single-class, which makes [:, 1] crash. This
+    # happens on PDBBind whenever labels still default to 0.0 (BM-node
+    # join not yet wired). Return NaN AUROC/AUPRC in that case rather
+    # than blowing up the whole pipeline.
+    if len(set(y_train.tolist())) < 2:
+        return LigandOnlyResult(
+            auroc=float("nan"),
+            auprc=float("nan"),
+            n_pos=int((y == 1).sum()),
+            n_neg=int((y == 0).sum()),
+            scores=np.zeros(len(test), dtype=np.float64),
+            used_rdkit=used_rdkit,
+        )
+
     clf = RandomForestClassifier(
         n_estimators=n_estimators,
         n_jobs=-1,
         random_state=random_state,
     )
-    clf.fit(feats, train[label_col].to_numpy())
+    clf.fit(feats, y_train)
     scores = clf.predict_proba(test_feats)[:, 1]
 
-    y = test[label_col].to_numpy()
     return LigandOnlyResult(
         auroc=float(roc_auc_score(y, scores)) if len(set(y)) == 2 else float("nan"),
         auprc=float(average_precision_score(y, scores)) if len(set(y)) == 2 else float("nan"),
