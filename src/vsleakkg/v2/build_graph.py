@@ -165,59 +165,33 @@ class BuildStats:
 # ---------------------------------------------------------------------------
 
 
-def _map_nodes(nodes: pl.LazyFrame) -> tuple[pl.LazyFrame, int]:
+def _map_nodes(nodes: pl.DataFrame) -> tuple[pl.DataFrame, int]:
     """Map v1 node_type to v2 node_type. Drop scaffolding-only v1 types."""
     keep = list(V1_TO_V2_NODE_TYPE.keys())
+    n_in = nodes.height
     kept = nodes.filter(pl.col("node_type").is_in(keep)).with_columns(
-        pl.col("node_type")
-        .map_elements(
-            lambda t: V1_TO_V2_NODE_TYPE.get(t, t),
-            return_dtype=pl.Utf8,
-        )
-        .alias("node_type")
+        pl.col("node_type").replace(V1_TO_V2_NODE_TYPE).alias("node_type")
     )
-    n_dropped = (
-        nodes.select(pl.len()).collect().item()
-        - kept.select(pl.len()).collect().item()
-    )
-    return kept, n_dropped
+    return kept, n_in - kept.height
 
 
-def _map_edges(edges: pl.LazyFrame) -> tuple[pl.LazyFrame, int]:
+def _map_edges(edges: pl.DataFrame) -> tuple[pl.DataFrame, int]:
     """Map v1 edge_type to v2 edge_type. Drop scaffolding-only v1 edges."""
     keep = list(V1_TO_V2_EDGE_TYPE.keys())
+    n_in = edges.height
     kept = edges.filter(pl.col("edge_type").is_in(keep)).with_columns(
-        pl.col("edge_type")
-        .map_elements(
-            lambda t: V1_TO_V2_EDGE_TYPE.get(t, t),
-            return_dtype=pl.Utf8,
-        )
-        .alias("edge_type")
+        pl.col("edge_type").replace(V1_TO_V2_EDGE_TYPE).alias("edge_type")
     )
-    n_dropped = (
-        edges.select(pl.len()).collect().item()
-        - kept.select(pl.len()).collect().item()
-    )
-    return kept, n_dropped
+    return kept, n_in - kept.height
 
 
 def _drop_trivial_scaffolds(
-    nodes: pl.LazyFrame,
-    edges: pl.LazyFrame,
+    nodes: pl.DataFrame,
+    edges: pl.DataFrame,
     cfg: HubMitigationConfig,
-) -> tuple[pl.LazyFrame, pl.LazyFrame, int]:
-    """Remove scaffold nodes with <= cfg.trivial_scaffold_max_atoms heavy atoms.
-
-    The v1 mvp2_nodes.parquet stores per-node properties under `props`
-    (string-encoded dict or JSON). We don't trust that to be reliable so
-    we fall back to "drop scaffolds whose label SMILES has <= K heavy
-    atoms" — counted by removing H atoms naively via length of the
-    canonical SMILES without stereo / brackets. RDKit-accurate counting
-    is left to a follow-up since for the v2 schema we mostly need the
-    largest hubs gone.
-    """
-    # Count heavy atoms approximately from the SMILES label.
-    scaffold_nodes = (
+) -> tuple[pl.DataFrame, pl.DataFrame, int]:
+    """Remove scaffold nodes with <= cfg.trivial_scaffold_max_atoms heavy atoms."""
+    trivial_ids = (
         nodes.filter(pl.col("node_type") == NodeType.SCAFFOLD.value)
         .with_columns(
             pl.col("label")
@@ -225,16 +199,12 @@ def _drop_trivial_scaffolds(
             .str.len_chars()
             .alias("heavy_approx")
         )
-    )
-    trivial_ids = (
-        scaffold_nodes.filter(pl.col("heavy_approx") <= cfg.trivial_scaffold_max_atoms)
-        .select("node_id")
-        .collect()["node_id"]
+        .filter(pl.col("heavy_approx") <= cfg.trivial_scaffold_max_atoms)
+        ["node_id"]
         .to_list()
     )
-    trivial_set = set(trivial_ids)
-    n_trivial = len(trivial_set)
-    if not trivial_set:
+    n_trivial = len(trivial_ids)
+    if not trivial_ids:
         return nodes, edges, 0
     nodes_out = nodes.filter(~pl.col("node_id").is_in(trivial_ids))
     edges_out = edges.filter(
@@ -244,17 +214,11 @@ def _drop_trivial_scaffolds(
 
 
 def _shard_hub_nodes(
-    nodes: pl.LazyFrame,
-    edges: pl.LazyFrame,
+    nodes: pl.DataFrame,
+    edges: pl.DataFrame,
     cfg: HubMitigationConfig,
-) -> tuple[pl.LazyFrame, pl.LazyFrame, int]:
-    """Apply degree cap: any node with degree > cfg.degree_cap is split.
-
-    For v2 we don't physically duplicate the node (the IDF weight + the
-    "is_hub" flag carry the information). We just tag those nodes with
-    `is_hub = True` so downstream cost functions can downweight them.
-    """
-    # Compute degree from edges (treat as undirected)
+) -> tuple[pl.DataFrame, pl.DataFrame, int]:
+    """Apply degree cap: any node with degree > cfg.degree_cap gets is_hub=True."""
     deg_src = edges.group_by("src").agg(pl.len().alias("deg")).rename({"src": "node_id"})
     deg_dst = edges.group_by("dst").agg(pl.len().alias("deg")).rename({"dst": "node_id"})
     deg = (
@@ -264,27 +228,23 @@ def _shard_hub_nodes(
     )
     hubs = (
         deg.filter(pl.col("deg") > cfg.degree_cap)
-        .select("node_id")
-        .collect()["node_id"]
+        ["node_id"]
         .to_list()
     )
     n_hubs = len(hubs)
-    if not hubs:
-        nodes_out = nodes.with_columns(pl.lit(False).alias("is_hub"))
-        return nodes_out, edges, 0
-    hub_set = set(hubs)
     nodes_out = nodes.with_columns(
-        pl.col("node_id").is_in(hubs).alias("is_hub")
+        pl.col("node_id").is_in(hubs).alias("is_hub") if hubs
+        else pl.lit(False).alias("is_hub")
     )
     return nodes_out, edges, n_hubs
 
 
 def _add_protein_cluster_edges(
-    edges: pl.LazyFrame,
-    nodes: pl.LazyFrame,
+    edges: pl.DataFrame,
+    nodes: pl.DataFrame,
     processed: Path,
     stats: BuildStats,
-) -> tuple[pl.LazyFrame, pl.LazyFrame]:
+) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Add protein_in_cluster edges from pdbbind cluster parquets.
 
     v1 emits `pdbbind_protein_clusters_{30,50,90}.parquet` with columns
@@ -296,8 +256,8 @@ def _add_protein_cluster_edges(
     90; we keep all three but the 50% one will get the default weight
     until we re-cluster at 40%.
     """
-    new_node_rows: list[pl.DataFrame] = []
-    new_edge_rows: list[pl.DataFrame] = []
+    new_node_dfs: list[pl.DataFrame] = []
+    new_edge_dfs: list[pl.DataFrame] = []
     counts: dict[str, int] = {}
     for res in ("30", "50", "90"):
         f = processed / f"pdbbind_protein_clusters_{res}.parquet"
@@ -324,22 +284,18 @@ def _add_protein_cluster_edges(
             ]
             continue
         df2 = df.select(
-            pl.col(col_protein).alias("member_id"),
-            pl.col(col_cluster).alias("cluster_id"),
+            pl.col(col_protein).cast(pl.Utf8).alias("member_id"),
+            pl.col(col_cluster).cast(pl.Utf8).alias("cluster_id"),
         )
         # Synthesise the ProteinCluster nodes (one per cluster_id).
-        cluster_node_ids = (
-            df2.select(pl.col("cluster_id").unique()).rename({"cluster_id": "node_id"})
-        )
-        cluster_node_ids = cluster_node_ids.with_columns(
-            (pl.lit(f"ProteinCluster::{res}::") + pl.col("node_id").cast(pl.Utf8)).alias("node_id"),
-        )
-        cluster_nodes = cluster_node_ids.with_columns(
-            pl.lit(NodeType.PROTEIN_CLUSTER.value).alias("node_type"),
-            pl.col("node_id").alias("label"),
-            pl.lit(f'{{"resolution":"{res}"}}').alias("props"),
-        ).select(["node_id", "node_type", "label", "props"])
-        new_node_rows.append(cluster_nodes)
+        unique_clusters = df2["cluster_id"].unique().to_list()
+        cluster_nodes = pl.DataFrame({
+            "node_id":   [f"ProteinCluster::{res}::{c}" for c in unique_clusters],
+            "node_type": [NodeType.PROTEIN_CLUSTER.value] * len(unique_clusters),
+            "label":     [f"ProteinCluster::{res}::{c}" for c in unique_clusters],
+            "props":     [f'{{"resolution":"{res}"}}'] * len(unique_clusters),
+        })
+        new_node_dfs.append(cluster_nodes)
         # Construct the protein_in_cluster edges (Protein -> ProteinCluster_<res>).
         edges_df = df2.with_columns(
             (pl.lit(f"ProteinCluster::{res}::") + pl.col("cluster_id").cast(pl.Utf8))
@@ -350,15 +306,13 @@ def _add_protein_cluster_edges(
             pl.lit(EdgeType.PROTEIN_IN_CLUSTER.value).alias("edge_type"),
             pl.lit(f'{{"resolution":"{res}"}}').alias("props"),
         )
-        new_edge_rows.append(edges_df)
+        new_edge_dfs.append(edges_df)
         counts[res] = edges_df.height
     stats.n_protein_cluster_edges = counts
-    if new_node_rows:
-        cluster_nodes_df = pl.concat(new_node_rows).lazy()
-        nodes = pl.concat([nodes, cluster_nodes_df])
-    if new_edge_rows:
-        cluster_edges_df = pl.concat(new_edge_rows).lazy()
-        edges = pl.concat([edges, cluster_edges_df])
+    if new_node_dfs:
+        nodes = pl.concat([nodes] + new_node_dfs, how="vertical_relaxed")
+    if new_edge_dfs:
+        edges = pl.concat([edges] + new_edge_dfs, how="vertical_relaxed")
     return nodes, edges
 
 
@@ -406,34 +360,40 @@ def build_graph(
     stats = BuildStats()
     t0 = time.perf_counter()
 
-    nodes = pl.scan_parquet(nodes_path)
-    edges = pl.scan_parquet(edges_path)
-
+    # Read EAGERLY so we only hit NFS once per file - critical on slow/loaded
+    # NFS storage where mmap'd scan_parquet causes many small page faults.
+    nodes = pl.read_parquet(nodes_path)
+    edges = pl.read_parquet(edges_path)
     if limit:
         nodes = nodes.head(limit)
         edges = edges.head(limit)
 
-    stats.n_nodes_in = nodes.select(pl.len()).collect().item()
-    stats.n_edges_in = edges.select(pl.len()).collect().item()
-    log.info("read %s rows from %s", stats.n_nodes_in, nodes_path.name)
-    log.info("read %s rows from %s", stats.n_edges_in, edges_path.name)
+    stats.n_nodes_in = nodes.height
+    stats.n_edges_in = edges.height
+    log.info("read %d rows from %s", stats.n_nodes_in, nodes_path.name)
+    log.info("read %d rows from %s", stats.n_edges_in, edges_path.name)
 
     nodes, dropped_n = _map_nodes(nodes)
     edges, dropped_e = _map_edges(edges)
     stats.n_nodes_dropped = dropped_n
     stats.n_edges_dropped = dropped_e
+    log.info("mapped: n_nodes=%d (-%d), n_edges=%d (-%d)",
+             nodes.height, dropped_n, edges.height, dropped_e)
 
     nodes, edges = _add_protein_cluster_edges(edges, nodes, processed, stats)
+    log.info("after cluster edges: n_nodes=%d, n_edges=%d", nodes.height, edges.height)
 
     nodes, edges, n_trivial = _drop_trivial_scaffolds(nodes, edges, cfg)
     stats.n_trivial_scaffolds_dropped = n_trivial
+    log.info("dropped %d trivial scaffolds", n_trivial)
 
     nodes, edges, n_hubs = _shard_hub_nodes(nodes, edges, cfg)
     stats.n_hub_nodes_sharded = n_hubs
+    log.info("flagged %d hub nodes", n_hubs)
 
-    # Materialise + write
-    nodes_df = nodes.collect()
-    edges_df = edges.collect()
+    # Already eager DataFrames at this point.
+    nodes_df = nodes
+    edges_df = edges
     stats.n_nodes_out = nodes_df.height
     stats.n_edges_out = edges_df.height
     stats.nodes_by_type = dict(
