@@ -159,6 +159,19 @@ def extract_examples_frame(
     })
     df = df.join(e_lig, on="example_id", how="left").join(e_prot, on="example_id", how="left")
 
+    # Pull SMILES from the linked Ligand node's `label` column (v1 stores
+    # the canonical SMILES there for DEKOIS / DUD-E / LIT-PCBA). This is
+    # the only reliable SMILES source until the side-table example_id format
+    # is aligned with v2 graph IDs.
+    lig_nodes = (
+        nodes.filter(pl.col("node_type") == NodeType.LIGAND.value)
+        .select(
+            pl.col("node_id").alias("ligand_id"),
+            pl.col("label").alias("smiles_v1"),
+        )
+    )
+    df = df.join(lig_nodes, on="ligand_id", how="left")
+
     # Fold side-table SMILES + label if provided. The side-table example_id
     # uses "source:source_id" form, which usually matches v1's
     # "Example::ex_id". When they don't match we fall back to a
@@ -186,8 +199,13 @@ def extract_examples_frame(
         )
     else:
         df = df.with_columns(pl.col("label_v1").alias("label"))
-    if "smiles" not in df.columns:
-        df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias("smiles"))
+    # Prefer side-table smiles, fall back to the Ligand-node SMILES
+    if "smiles" in df.columns:
+        df = df.with_columns(
+            pl.coalesce([pl.col("smiles"), pl.col("smiles_v1")]).alias("smiles"),
+        )
+    else:
+        df = df.with_columns(pl.col("smiles_v1").alias("smiles"))
     # Casts
     df = df.with_columns(
         pl.col("label").cast(pl.Float64, strict=False).fill_null(0.0),
