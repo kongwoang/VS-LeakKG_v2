@@ -1,0 +1,8 @@
+corpus,regime,feasible,n_groups,rho_max,size_train,size_val,size_test,actives_train,actives_test,baseline_auroc,baseline_auprc,n_pos_test,n_neg_test,notes
+litpcba,ligand,True,0,0.0,35000,7500,7500,100,21,0.6524745477814071,0.009368586654610774,21,7479,
+litpcba,scaffold,True,0,0.0,35000,7500,7500,100,21,0.6270668984267059,0.005656939297771262,21,7479,
+litpcba,protein,True,0,0.0,19808,16384,13808,110,14,0.42856366121916356,0.0009413946715011035,14,13794,
+litpcba,pocket,False,0,0.0,0,0,0,0,0,nan,nan,0,0,"infeasible: no edges of type ['example_has_pocket', 'pocket_in_cluster', 'pocket_similar'] in graph"
+litpcba,assay,False,0,0.0,0,0,0,0,0,nan,nan,0,0,"infeasible: no edges of type ['example_from_assay', 'example_from_publication'] in graph"
+litpcba,dual,True,0,0.0,35000,7500,7500,100,21,0.5590765253821812,0.008493464852247943,21,7479,
+litpcba,strict,True,0,0.0,35000,7500,7500,100,21,nan,nan,0,0,strict baseline killed due to OOM-paging

@@ -1,0 +1,29 @@
+corpus,regime,feasible,n_groups,rho_max,size_train,size_val,size_test,actives_train,actives_test,baseline_auroc,baseline_auprc,n_pos_test,n_neg_test,notes
+dekois,ligand,true,47592,0.0003,35000,7500,7500,1177,252,0.929736774676758,0.6696497002715618,252,7248,""
+dekois,scaffold,true,37723,0.00162,35000,7500,7500,1177,252,0.926958777900417,0.6587977420464699,252,7248,""
+dekois,protein,true,81,0.0136,21511,14188,14301,760,450,0.8629920021819523,0.26533002415988527,450,13851,""
+dekois,pocket,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_has_pocket', 'pocket_in_cluster', 'pocket_similar'] in graph"
+dekois,assay,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_from_assay', 'example_from_publication'] in graph"
+dekois,dual,true,47592,0.0003,35000,7500,7500,1177,252,0.929736774676758,0.6696497002715618,252,7248,""
+dekois,strict,true,50000,0.00002,35000,7500,7500,1177,252,0.9653366336416833,0.7333276506872859,252,7248,""
+dude,ligand,true,49642,0.00006,35000,7500,7500,549,118,0.9379669512189522,0.6104891340660299,118,7382,""
+dude,scaffold,true,35258,0.00266,35000,7500,7500,549,118,0.9229711299588097,0.5518107188118675,118,7382,""
+dude,protein,true,102,0.03758,19097,15761,15142,367,218,0.879006845694024,0.3248310814777496,218,14924,""
+dude,pocket,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_has_pocket', 'pocket_in_cluster', 'pocket_similar'] in graph"
+dude,assay,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_from_assay', 'example_from_publication'] in graph"
+dude,dual,true,49642,0.00006,35000,7500,7500,549,118,0.9379669512189522,0.6104891340660299,118,7382,""
+dude,strict,true,50000,0.00002,35000,7500,7500,549,118,0.9570588559436835,0.6794546382518287,118,7382,""
+litpcba,ligand,true,0,0.0,35000,7500,7500,100,21,0.6524745477814071,0.009368586654610774,21,7479,
+litpcba,scaffold,true,0,0.0,35000,7500,7500,100,21,0.6270668984267059,0.005656939297771262,21,7479,
+litpcba,protein,true,0,0.0,19808,16384,13808,110,14,0.42856366121916356,0.0009413946715011035,14,13794,
+litpcba,pocket,false,0,0.0,0,0,0,0,0,nan,nan,0,0,"infeasible: no edges of type ['example_has_pocket', 'pocket_in_cluster', 'pocket_similar'] in graph"
+litpcba,assay,false,0,0.0,0,0,0,0,0,nan,nan,0,0,"infeasible: no edges of type ['example_from_assay', 'example_from_publication'] in graph"
+litpcba,dual,true,0,0.0,35000,7500,7500,100,21,0.5590765253821812,0.008493464852247943,21,7479,
+litpcba,strict,true,0,0.0,35000,7500,7500,100,21,nan,nan,0,0,strict baseline killed due to OOM-paging
+pdbbind,ligand,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,scaffold,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,protein,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,pocket,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,assay,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,dual,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,strict,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph

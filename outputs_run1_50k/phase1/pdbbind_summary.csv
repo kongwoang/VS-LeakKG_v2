@@ -1,0 +1,8 @@
+corpus,regime,feasible,n_groups,rho_max,size_train,size_val,size_test,actives_train,actives_test,baseline_auroc,baseline_auprc,n_pos_test,n_neg_test,notes
+pdbbind,ligand,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,scaffold,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,protein,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,pocket,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,assay,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,dual,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
+pdbbind,strict,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,no_examples_in_graph
