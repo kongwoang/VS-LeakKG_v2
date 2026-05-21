@@ -12,6 +12,8 @@ v2 differs from v1 in the following ways (see proposal.tex for details):
 - Feature leakage (path-based) vs label leakage (exact-row) reported separately.
 - Giant-component fallback to Louvain community detection.
 - Group-atomic split assignment with explicit residual contamination reporting.
+- Hydrate side-table: (example_id) -> rich-row, the bridge between v2 splits
+  and model adapters (SPRINT, DrugCLIP, LigUnity). See vsleakkg.v2.hydrate.
 
 v2 lives alongside v1 (it does not replace it). v1 reproducibility is unaffected.
 """
