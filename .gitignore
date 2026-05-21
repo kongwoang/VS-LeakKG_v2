@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+.DS_Store
+Thumbs.db
+
+# v2 outputs (regenerable on the Linux box)
+outputs/
+data/
+_dataset_cache/
+
+# Editor artefacts
+.vscode/
+.idea/
+*.swp
+
+# LaTeX build products
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.synctex.gz
+*.pdf
