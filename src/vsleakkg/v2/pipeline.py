@@ -102,6 +102,19 @@ def extract_examples_frame(
         nodes.filter(pl.col("node_type") == NodeType.EXAMPLE.value)
         ["node_id"].to_list()
     )
+    if not example_ids:
+        log.warning(
+            "[%s] no Example nodes in this graph - returning empty examples frame. "
+            "This is expected for corpora whose v1 schema lacked Example nodes (e.g. PDBBind)",
+            corpus_tag,
+        )
+        return pl.DataFrame({
+            "example_id": pl.Series([], dtype=pl.Utf8),
+            "ligand_id":  pl.Series([], dtype=pl.Utf8),
+            "protein_id": pl.Series([], dtype=pl.Utf8),
+            "smiles":     pl.Series([], dtype=pl.Utf8),
+            "label":      pl.Series([], dtype=pl.Float64),
+        })
 
     # one-hop joins
     e_lig = (
@@ -113,7 +126,7 @@ def extract_examples_frame(
         .select(pl.col("src").alias("example_id"), pl.col("dst").alias("protein_id"))
     )
 
-    df = pl.DataFrame({"example_id": example_ids})
+    df = pl.DataFrame({"example_id": pl.Series(example_ids, dtype=pl.Utf8)})
     df = df.join(e_lig, on="example_id", how="left").join(e_prot, on="example_id", how="left")
 
     # Fold side-table SMILES + label if provided. The side-table example_id
@@ -320,6 +333,30 @@ def run_corpus(
         examples = examples.sample(n=sample_examples, seed=0)
 
     log.info("[%s] examples=%d edges=%d", corpus_tag, examples.height, edges.height)
+    if examples.height == 0:
+        # Emit an empty summary so downstream consumers don't crash, but
+        # skip the regime loop entirely.
+        log.warning("[%s] skipping all regimes (no Example nodes)", corpus_tag)
+        summary_dir = output_dir / "phase1"
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        pl.DataFrame({
+            "corpus": [corpus_tag] * len(REGIMES),
+            "regime": list(REGIMES.keys()),
+            "feasible": [False] * len(REGIMES),
+            "n_groups": [0] * len(REGIMES),
+            "rho_max": [0.0] * len(REGIMES),
+            "size_train": [0] * len(REGIMES),
+            "size_val": [0] * len(REGIMES),
+            "size_test": [0] * len(REGIMES),
+            "actives_train": [0] * len(REGIMES),
+            "actives_test": [0] * len(REGIMES),
+            "baseline_auroc": [float("nan")] * len(REGIMES),
+            "baseline_auprc": [float("nan")] * len(REGIMES),
+            "n_pos_test": [0] * len(REGIMES),
+            "n_neg_test": [0] * len(REGIMES),
+            "notes": ["no_examples_in_graph"] * len(REGIMES),
+        }).write_csv(summary_dir / f"{corpus_tag}_summary.csv")
+        return {}
 
     results: dict[str, RegimeResult] = {}
     rows: list[dict] = []
