@@ -33,6 +33,7 @@ with one row per regime.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -98,10 +99,35 @@ def extract_examples_frame(
     (one-hop joins for protein/ligand). If a side_table is provided, we
     prefer its SMILES + label since it has gone through canonicalization.
     """
-    example_ids = (
-        nodes.filter(pl.col("node_type") == NodeType.EXAMPLE.value)
-        ["node_id"].to_list()
-    )
+    example_nodes = nodes.filter(pl.col("node_type") == NodeType.EXAMPLE.value)
+    example_ids = example_nodes["node_id"].to_list()
+
+    # Extract per-example label / smiles / target from the JSON `props` column
+    # that v1 wrote on every Example node. The keys we care about are
+    # `label` (0 / 1 / pAct) and `target` (target name); fall back to None.
+    props_labels: list[float | None] = []
+    props_targets: list[str | None] = []
+    if "props" in example_nodes.columns and example_nodes.height:
+        for s in example_nodes["props"].to_list():
+            lab: float | None = None
+            tgt: str | None = None
+            if s:
+                try:
+                    d = json.loads(s)
+                    if "label" in d:
+                        try:
+                            lab = float(d["label"])
+                        except (TypeError, ValueError):
+                            lab = None
+                    tgt = d.get("target")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            props_labels.append(lab)
+            props_targets.append(tgt)
+    # smiles from the node label column (v1 stores the ligand identifier
+    # there for DEKOIS / DUD-E / LIT-PCBA - usually ZINC id, not SMILES).
+    # The smiles_canonical column comes via side-table join below.
+
     if not example_ids:
         log.warning(
             "[%s] no Example nodes in this graph - returning empty examples frame. "
@@ -126,7 +152,11 @@ def extract_examples_frame(
         .select(pl.col("src").alias("example_id"), pl.col("dst").alias("protein_id"))
     )
 
-    df = pl.DataFrame({"example_id": pl.Series(example_ids, dtype=pl.Utf8)})
+    df = pl.DataFrame({
+        "example_id": pl.Series(example_ids, dtype=pl.Utf8),
+        "label_v1":   pl.Series(props_labels, dtype=pl.Float64),
+        "target_v1":  pl.Series(props_targets, dtype=pl.Utf8),
+    })
     df = df.join(e_lig, on="example_id", how="left").join(e_prot, on="example_id", how="left")
 
     # Fold side-table SMILES + label if provided. The side-table example_id
@@ -149,15 +179,20 @@ def extract_examples_frame(
                 missing.height, df.height,
             )
 
-    if "label" not in df.columns:
-        df = df.with_columns(pl.lit(0.0).alias("label"))
+    # Prefer label from side-table; fall back to label_v1 (extracted from props)
+    if "label" in df.columns:
+        df = df.with_columns(
+            pl.coalesce([pl.col("label"), pl.col("label_v1")]).alias("label"),
+        )
+    else:
+        df = df.with_columns(pl.col("label_v1").alias("label"))
     if "smiles" not in df.columns:
-        df = df.with_columns(pl.lit(None).alias("smiles"))
+        df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias("smiles"))
     # Casts
     df = df.with_columns(
         pl.col("label").cast(pl.Float64, strict=False).fill_null(0.0),
     )
-    return df
+    return df.select(["example_id", "ligand_id", "protein_id", "smiles", "label"])
 
 
 # ---------------------------------------------------------------------------
