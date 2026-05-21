@@ -337,8 +337,7 @@ def run_corpus(
         # Emit an empty summary so downstream consumers don't crash, but
         # skip the regime loop entirely.
         log.warning("[%s] skipping all regimes (no Example nodes)", corpus_tag)
-        summary_dir = output_dir / "phase1"
-        summary_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
         pl.DataFrame({
             "corpus": [corpus_tag] * len(REGIMES),
             "regime": list(REGIMES.keys()),
@@ -355,7 +354,7 @@ def run_corpus(
             "n_pos_test": [0] * len(REGIMES),
             "n_neg_test": [0] * len(REGIMES),
             "notes": ["no_examples_in_graph"] * len(REGIMES),
-        }).write_csv(summary_dir / f"{corpus_tag}_summary.csv")
+        }).write_csv(output_dir / f"{corpus_tag}_summary.csv")
         return {}
 
     results: dict[str, RegimeResult] = {}
@@ -392,9 +391,10 @@ def run_corpus(
             "n_neg_test": rr.n_neg_test,
             "notes": rr.notes,
         })
-    summary_dir = output_dir / "phase1"
-    summary_dir.mkdir(parents=True, exist_ok=True)
-    pl.DataFrame(rows).write_csv(summary_dir / f"{corpus_tag}_summary.csv")
+    # Write summary directly under output_dir to avoid a double-nested
+    # outputs/v2/phase1/phase1/ when callers pass --output-dir outputs/v2/phase1.
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(rows).write_csv(output_dir / f"{corpus_tag}_summary.csv")
     return results
 
 

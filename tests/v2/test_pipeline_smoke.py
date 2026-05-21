@@ -101,8 +101,8 @@ def test_pipeline_runs_all_regimes(tmp_path):
 
     # Outputs land in the expected layout
     assert (out / "splits" / "test" / "ligand.parquet").exists()
-    assert (out / "phase1" / "test_summary.csv").exists()
-    summary = pl.read_csv(out / "phase1" / "test_summary.csv")
+    assert (out / "test_summary.csv").exists()
+    summary = pl.read_csv(out / "test_summary.csv")
     assert summary.height == len(pp.REGIMES)
     assert "feasible" in summary.columns
     assert "baseline_auroc" in summary.columns
