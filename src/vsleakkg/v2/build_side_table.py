@@ -273,19 +273,35 @@ def _load_examples_parquet(
     target = cols.get("target") or cols.get("protein_id")
     label_c = cols.get("label")
     label_t = cols.get("label_type") or cols.get("standard_type")
-    src_id = cols.get("source_id") or cols.get("compound_id") or target or "row"
+    # Pick the most specific available identifier - never fall back to
+    # `target`, which is shared across thousands of rows and would collapse
+    # the table during dedup. If none of the per-row id columns exist,
+    # combine row index with target so example_ids are still unique.
+    src_id = (
+        cols.get("source_id")
+        or cols.get("compound_id")
+        or cols.get("ext_id_1")
+        or cols.get("ext_id_2")
+        or cols.get("ligand_id")
+        or cols.get("smiles_canonical")
+        or cols.get("inchikey")
+    )
     if not sm:
         log.warning("%s missing SMILES col (have=%s)", f.name, df0.columns)
         return pl.DataFrame(schema=SIDE_TABLE_SCHEMA)
     n = df0.height
     smiles = df0[sm].cast(pl.Utf8).to_list()
     smi_can = [canonicalize_smiles(s) for s in smiles]
-    if src_id == "row":
-        ids = [f"row_{i}" for i in range(n)]
+    if src_id is None:
+        # Last resort: combine target + row index so each row stays unique.
+        targets_list = df0[target].cast(pl.Utf8).to_list() if target else [None] * n
+        ids = [f"{(t or 'na')}_row{j}" for j, t in enumerate(targets_list)]
     else:
         ids = df0[src_id].cast(pl.Utf8).to_list()
+        # If the chosen column has nulls, fall back to row indices for those.
+        ids = [v if v else f"row_{j}" for j, v in enumerate(ids)]
     # Avoid `:` in source_id (would break example_id parsing)
-    ids = [i.replace(":", "_") if i else f"row_{j}" for j, i in enumerate(ids)]
+    ids = [i.replace(":", "_") for i in ids]
     label_list = (
         [float(v) if v is not None else 0.0 for v in df0[label_c].to_list()]
         if label_c else [0.0] * n
