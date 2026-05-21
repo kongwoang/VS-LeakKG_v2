@@ -1,4 +1,82 @@
-# Session checkpoint — 2026-05-22
+# Session checkpoint — 2026-05-22 (UPDATED Run 2)
+
+## Resume order on next session
+
+1. Reconnect SSH bridge (Windows → kongwoang Tailscale → VUW).
+2. Check whether the **litpcba pipeline** at PID 681123 on VUW finished. If yes, `rerun_pipeline.log` will have a `[done rerun_pipeline]` line.
+3. **Critical**: rebuild PDBBind graph with `corpus=pdbbind` ONLY (commit `d4a5e1b` adds BindingMeasurement pK extraction). Then rerun pdbbind pipeline. PDBBind will go from 0/7 feasible to ~5-6/7 feasible once labels are real.
+4. Regenerate `phase1_combined.csv` + tables/figures.
+5. Then C (drop --sample-examples cap) — many hours, unattended.
+
+## Run 2 progress (the new run with A+B applied)
+
+| Step | State | Notes |
+|------|-------|-------|
+| `rerun_d1.sh` (A+B = rebuild all 4 graphs) | **DONE** | seq_id fix added 35586 protein_in_cluster edges per corpus; PDBBind got 19037 synthesized Examples but labels still = 0.0 (commit d4a5e1b fixes this) |
+| `rerun_pipeline.sh` pdbbind | DONE (broken) | 0/7 feasible because pdbbind labels were all 0.0 (build with old code); baseline crashed with IndexError, now guarded in commit `d4a5e1b` |
+| `rerun_pipeline.sh` dekois | **DONE** | 7 regimes, 5 feasible, baselines AUROC 0.86–0.97 same as Run 1 |
+| `rerun_pipeline.sh` dude | **DONE** | 7 regimes, 5 feasible, baselines same as Run 1 |
+| `rerun_pipeline.sh` litpcba | **RUNNING** at PID 681123 (10:53 start) | ~25 min more expected. Strict regime may OOM-page again |
+
+## Was running at this checkpoint
+
+- `bash /tmp/rerun_pipeline.sh` PID 664902 — orchestrator
+- `python -m vsleakkg.v2.pipeline ... litpcba` PID 681123 — running through litpcba regimes
+- No finalize.sh active (the rerun_pipeline.sh script handles its own finalize step at the end)
+
+## What to do on resume
+
+```bash
+# 1. Check it landed
+ssh kongwoang "ssh VUW 'tail -50 /vol/dl-nguyenb5-solar/users/hoangpc/rerun_pipeline.log'"
+
+# 2. Quick check pdbbind got a non-zero feasible count after the rerun
+ssh kongwoang "ssh VUW 'cat /vol/dl-nguyenb5-solar/users/hoangpc/VS-LeakKG_v2/outputs/v2/phase1/pdbbind_summary.csv'"
+
+# 3. If pdbbind feasible=0 (highly likely - it ran before the pK fix), rebuild + rerun JUST pdbbind:
+ssh kongwoang "ssh VUW 'cd /vol/dl-nguyenb5-solar/users/hoangpc/VS-LeakKG_v2 && /usr/pkg/bin/python -m vsleakkg.v2.build_graph --output-dir outputs/v2/graph_pdbbind --corpus pdbbind && rm -f outputs/v2/phase1/pdbbind_summary.csv outputs/v2/phase1/splits/pdbbind/*.parquet outputs/v2/phase1/validation_contamination/pdbbind/*.csv outputs/v2/phase1/baselines/pdbbind/*.csv && /usr/pkg/bin/python -m vsleakkg.v2.pipeline --graph-dir outputs/v2/graph_pdbbind --side-table outputs/v2/graph/side_table.parquet --output-dir outputs/v2/phase1 --corpus-tag pdbbind --sample-examples 50000'"
+
+# 4. Regenerate phase1_combined + tables + figure
+ssh kongwoang "ssh VUW 'cd /vol/dl-nguyenb5-solar/users/hoangpc/VS-LeakKG_v2 && /usr/pkg/bin/python -m vsleakkg.v2.final_figures --repo-root .'"
+
+# 5. Pull updated outputs to Windows for git archive
+```
+
+## Local Run 1 archive already committed
+
+- `outputs_run1_50k/phase1/{pdbbind,dekois,dude,litpcba}_summary.csv` + `phase1_combined.csv`
+- `outputs_run1_50k/tables/table{1,2,5}*.csv`
+- `outputs_run1_50k/figures/figure2_hub_pareto.png`
+- `LINUX_RUN_REPORT_PHASE1.md` (Run 1)
+- `LINUX_RUN_REPORT_PHASE1_REVIEW.md` (Run 1)
+- `REVIEW_PHASE1.md` (manual Run 1 review)
+
+## Commits this session
+
+```
+d4a5e1b fix(pdbbind): extract pK from BM props + guard single-class baseline
+c687437 data: archive Run 1 outputs (sample-examples=50k cap)
+e4e88ae feat(build_graph): synthesize PDBBind Example nodes from Complex (step B)
+4a31ae9 fix(pipeline): pull SMILES from v1 Ligand node label
+f61720c docs: Phase 1 results review
+5edcdb5 fix(pipeline): extract label from v1 Example node props
+b0f9fa2 fix(pipeline): write summary directly under output_dir
+559f221 fix(pipeline): tolerate corpora with no Example nodes (PDBBind)
+db3c403 fix(side-table): never fall back source_id to target column
+9787a24 fix(build_graph): recognise seq_id / rep_seq_id in cluster parquets
+3f5529a feat(review): tools/phase1_review.py
+97d9764 perf(build_graph): eager read_parquet
+ace8be9 feat(sprint): tools/sprint_csv_from_v2.py
+b6716b8 feat(figures): Phase 1 final tables + Figure 2
+9bcd9d7 feat(pipeline): end-to-end Phase 1 driver
+4cf7cc3 feat(graph): v1->v2 schema mapper + side-table builder
+```
+
+---
+
+# Original checkpoint (Run 1)
+
+
 
 ## SSH chain (will need to re-establish)
 
