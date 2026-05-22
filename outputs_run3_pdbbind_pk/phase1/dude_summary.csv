@@ -1,0 +1,8 @@
+corpus,regime,feasible,n_groups,rho_max,size_train,size_val,size_test,actives_train,actives_test,baseline_auroc,baseline_auprc,n_pos_test,n_neg_test,notes
+dude,ligand,true,49642,0.00006,35000,7500,7500,549,118,0.9516121440609087,0.6898770614570285,118,7382,""
+dude,scaffold,true,35258,0.00266,35000,7500,7500,549,118,0.9731780005418587,0.6599124539972332,118,7382,""
+dude,protein,true,102,0.03758,19083,15726,15191,366,219,0.8787520571123937,0.3184291774958253,219,14972,""
+dude,pocket,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_has_pocket', 'pocket_in_cluster', 'pocket_similar'] in graph"
+dude,assay,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_from_assay', 'example_from_publication'] in graph"
+dude,dual,true,50000,0.00002,35000,7500,7500,549,118,0.9520374800821053,0.6676342458294682,118,7382,""
+dude,strict,true,50000,0.00002,35000,7500,7500,549,118,0.9520374800821053,0.6676342458294682,118,7382,""

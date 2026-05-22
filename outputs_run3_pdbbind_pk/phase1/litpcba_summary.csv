@@ -1,0 +1,8 @@
+corpus,regime,feasible,n_groups,rho_max,size_train,size_val,size_test,actives_train,actives_test,baseline_auroc,baseline_auprc,n_pos_test,n_neg_test,notes
+litpcba,ligand,true,47036,0.00008,35000,7500,7500,100,21,0.5665641574185497,0.006332516871882552,21,7479,""
+litpcba,scaffold,true,30390,0.00302,35000,7500,7500,100,21,0.6185318892900121,0.006461127143430088,21,7479,""
+litpcba,protein,false,15,0.1365,19808,16384,13808,110,14,0.40473083535284493,0.0009387772377946244,14,13794,""
+litpcba,pocket,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_has_pocket', 'pocket_in_cluster', 'pocket_similar'] in graph"
+litpcba,assay,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_from_assay', 'example_from_publication'] in graph"
+litpcba,dual,true,50000,0.00002,35000,7500,7500,100,21,0.5609006806359393,0.0032886243108393217,21,7479,""
+litpcba,strict,true,50000,0.00002,35000,7500,7500,100,21,0.5609006806359393,0.0032886243108393217,21,7479,""
