@@ -1,0 +1,8 @@
+corpus,regime,feasible,n_groups,rho_max,size_train,size_val,size_test,actives_train,actives_test,baseline_auroc,baseline_auprc,n_pos_test,n_neg_test,notes
+litpcba,ligand,true,382044,0.0000158372414240395,1856384,397797,397796,5569,1193,0.5176502626256755,0.003236138309401111,1193,396603,""
+litpcba,scaffold,true,118316,0.003237961716862552,1856384,397797,397796,5569,1193,0.5255435473943522,0.003504491103004761,1193,396603,""
+litpcba,protein,true,15,0.13529378271380182,1286326,703706,661945,6620,582,0.5560169144702848,0.0011537568795585518,582,661363,""
+litpcba,pocket,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_has_pocket', 'pocket_in_cluster', 'pocket_similar'] in graph"
+litpcba,assay,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_from_assay', 'example_from_publication'] in graph"
+litpcba,dual,true,2651977,3.7707717676284524e-7,1397620,627179,627178,5573,1191,0.5325845404785629,0.0022558252348783493,1191,625987,""
+litpcba,strict,true,2651977,3.7707717676284524e-7,1397620,627179,627178,5573,1191,0.5325848845196361,0.0022558895639406816,1191,625987,""

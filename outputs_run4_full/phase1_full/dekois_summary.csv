@@ -1,0 +1,8 @@
+corpus,regime,feasible,n_groups,rho_max,size_train,size_val,size_test,actives_train,actives_test,baseline_auroc,baseline_auprc,n_pos_test,n_neg_test,notes
+dekois,ligand,true,87954,0.00021950913576117406,66968,14350,14350,2267,486,0.886313236282381,0.5353677124871425,486,13864,""
+dekois,scaffold,true,64318,0.0015365639503282184,66968,14350,14350,2267,486,0.8504948274715698,0.45314021070920274,486,13864,""
+dekois,protein,true,81,0.012951039009909269,41407,27052,27209,1399,920,0.7569272029795897,0.2019290528608568,920,26289,""
+dekois,pocket,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_has_pocket', 'pocket_in_cluster', 'pocket_similar'] in graph"
+dekois,assay,false,0,0.0,0,0,0,0,0,NaN,NaN,0,0,"infeasible: no edges of type ['example_from_assay', 'example_from_publication'] in graph"
+dekois,dual,true,95668,0.000010452815988627336,60571,17549,17548,2079,580,0.8137353883171569,0.26574636473397145,580,16968,""
+dekois,strict,true,95668,0.000010452815988627336,60571,17549,17548,2079,580,0.8137353883171569,0.26574636473397145,580,16968,""
