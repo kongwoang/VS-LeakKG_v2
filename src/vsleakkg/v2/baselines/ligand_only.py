@@ -77,16 +77,28 @@ def evaluate_ligand_only(
     *,
     smiles_col: str = "smiles",
     label_col: str = "label",
-    n_estimators: int = 200,
+    n_estimators: int = 100,
     random_state: int = 0,
+    train_cap: int = 15000,
 ) -> LigandOnlyResult:
-    """Train Morgan-RF on `train` and report AUROC/AUPRC on `test`."""
+    """Train Morgan-RF on `train` and report AUROC/AUPRC on `test`.
+
+    `train_cap` caps the training set size: with 200 trees x 35k samples
+    x 2048 features Morgan-RF can hit tens of GB of RAM, which causes
+    swap thrash on loaded boxes. 15k samples + 100 trees is roughly 4x
+    less RAM and still produces a tight estimate of the ligand-only
+    achievable AUROC.
+    """
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.metrics import roc_auc_score, average_precision_score
 
     for col in (smiles_col, label_col):
         if col not in train.columns or col not in test.columns:
             raise KeyError(f"missing column: {col}")
+
+    # Stratified down-sample on label so both classes survive even at small caps.
+    if train.height > train_cap:
+        train = train.sample(n=train_cap, seed=random_state, with_replacement=False)
 
     feats = featurise_ligands(train[smiles_col].to_list())
     test_feats = featurise_ligands(test[smiles_col].to_list())
