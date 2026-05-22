@@ -1,3 +1,31 @@
+# Session checkpoint — 2026-05-23 (Phase 2 SPRINT training overnight)
+
+## Live overnight (Phase 2 SPRINT)
+
+Three SPRINT trainings nohup'd on VUW, will run ~22-28h to completion of
+the configured 250 epochs from `agg_config.yml` (unmodified, published).
+
+| GPU | Regime | exp_id | PID | Status as of 06:14 NZST |
+|-----|--------|--------|-----|--------------------------|
+| 0 | ligand | v2_pdbbind_ligand_agg_paper | 970059 | epoch 33, best val/aupr 0.71 |
+| 1 | protein | v2_pdbbind_protein_agg_paper | 984088 | epoch 33, best val/aupr 0.437 (plateaued since epoch 11) |
+| 2 | dual | v2_pdbbind_dual_agg_paper | 1422504 | featurizing 79/742 ProtBert batches |
+
+After each `trainer.fit()` completes, Lightning auto-runs `trainer.test()` so
+the final test-set AUROC/AUPRC will be in the log.
+
+To verify after disconnect:
+```
+ssh kongwoang "ssh VUW 'for r in ligand protein dual; do echo === \$r ===; grep \"val/aupr\\|Test\" /vol/dl-nguyenb5-solar/users/hoangpc/sprint_runs/v2_pdbbind_\${r}_agg_paper.log | tail -5; done'"
+```
+
+Audit signal already clear at mid-training: protein-clean val/aupr 0.44 vs
+ligand-clean 0.71 (-27pp). Strict-clean killed because it degenerated to
+a random split (singleton groups on PDBBind). Replaced with dual-clean
+(real constraint).
+
+---
+
 # Session checkpoint — 2026-05-22 (UPDATED Run 2)
 
 ## Resume order on next session
