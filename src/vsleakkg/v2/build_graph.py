@@ -349,6 +349,10 @@ def _synthesize_pdbbind_examples(
     cmx_to_src_map = dict(zip(cmx_to_src["complex_id"].to_list(), cmx_to_src["source_id"].to_list()))
 
     new_edge_rows = []
+    # Threshold to binarise pK for the pipeline's actives/inactives count.
+    # PDBBind protocol convention: pK >= 6.0 (Ki/Kd/IC50 <= 1 uM) -> active.
+    # The original pK stays in props["pk_value"] for follow-up regression.
+    PK_BINARY_THRESHOLD = 6.0
     for cid in complex_ids:
         # Strip the "Complex::" prefix if present.
         pdb_id = cid.replace("Complex::", "") if cid.startswith("Complex::") else cid
@@ -358,8 +362,11 @@ def _synthesize_pdbbind_examples(
         # Look up the pK label via the BM node mapped to this complex.
         bm_id = cmx_to_bm_map.get(cid)
         pk = bm_labels.get(bm_id, 0.0) if bm_id else 0.0
+        binary_label = 1.0 if pk >= PK_BINARY_THRESHOLD else 0.0
         example_props.append(
-            f'{{"label": {pk}, "target": "{cmx_to_prot_map.get(cid, "")}", "source": "PDBBind", "pdb_id": "{pdb_id}"}}'
+            f'{{"label": {binary_label}, "pk_value": {pk}, '
+            f'"target": "{cmx_to_prot_map.get(cid, "")}", '
+            f'"source": "PDBBind", "pdb_id": "{pdb_id}"}}'
         )
         if cid in cmx_to_lig_map:
             new_edge_rows.append({
