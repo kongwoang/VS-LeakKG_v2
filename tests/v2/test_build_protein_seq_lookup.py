@@ -39,12 +39,16 @@ def test_pdbbind_lookup(tmp_path):
     _make_pdbbind_proteins(proc)
     out = tmp_path / "lookup.parquet"
     counts = tool.build_lookup(processed=proc, sources=["pdbbind"], output=out)
-    # 2 + 1 = 3 unique pdb_ids
-    assert counts["pdbbind"] == 3
-    assert counts["total"] == 3
+    # 3 unique pdb_ids + 2 unique seq_sha256 prefixes -> 5 rows
+    assert counts["pdbbind"] == 5
+    assert counts["total"] == 5
     df = pl.read_parquet(out)
-    assert set(df["target_id"].to_list()) == {"1abc", "2def", "3ghi"}
+    target_ids = set(df["target_id"].to_list())
+    assert {"1abc", "2def", "3ghi"} <= target_ids   # pdb_id rows
+    # seq_sha256 prefix rows: "aaaa" and "bbbb" (only 4 chars, slice(0,16) is no-op)
+    assert "aaaa" in target_ids and "bbbb" in target_ids
     assert df.filter(pl.col("target_id") == "1abc")[0, "target_sequence"] == "MKTAYIAKQRQ"
+    assert df.filter(pl.col("target_id") == "aaaa")[0, "target_sequence"] == "MKTAYIAKQRQ"
 
 
 def test_unknown_source_returns_empty(tmp_path):

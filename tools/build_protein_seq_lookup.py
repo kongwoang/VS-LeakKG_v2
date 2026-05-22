@@ -34,21 +34,37 @@ log = logging.getLogger(__name__)
 
 
 def _load_pdbbind(processed: Path) -> pl.DataFrame:
-    """Return (pdb_id, target_sequence, source='pdbbind') with one row per PDB id."""
+    """Return (target_id, target_sequence, source='pdbbind').
+
+    Emits one row per PDB id AND one row per truncated 16-char seq_sha256
+    prefix. The latter is the format used by the v1 graph builder's
+    Protein node_ids (`prot:PDBBind:<16-hex>`), so the side-table can
+    join either way.
+    """
     f = processed / "pdbbind_proteins.parquet"
     if not f.exists():
         log.warning("pdbbind_proteins.parquet missing")
         return pl.DataFrame()
     df = pl.read_parquet(f)
-    # Explode pdb_ids list -> one row per pdb_id sharing the sequence
-    df = df.select(
+
+    # (a) pdb_id-keyed view: 19037 rows
+    by_pdb = df.select(
         pl.col("pdb_ids").alias("pdb_id"),
         pl.col("sequence_concat").alias("target_sequence"),
-    ).explode("pdb_id")
-    df = df.with_columns(pl.lit("pdbbind").alias("source"))
-    df = df.rename({"pdb_id": "target_id"})
-    df = df.select(["target_id", "target_sequence", "source"])
-    return df
+    ).explode("pdb_id").rename({"pdb_id": "target_id"})
+    by_pdb = by_pdb.with_columns(pl.lit("pdbbind").alias("source"))
+
+    # (b) seq_sha256-prefix-keyed view: ~thousands of unique sequences
+    by_seq = df.select(
+        pl.col("seq_sha256").str.slice(0, 16).alias("target_id"),
+        pl.col("sequence_concat").alias("target_sequence"),
+    )
+    by_seq = by_seq.with_columns(pl.lit("pdbbind").alias("source"))
+
+    combined = pl.concat([by_pdb, by_seq], how="vertical_relaxed").unique(
+        subset=["target_id"], keep="first"
+    )
+    return combined.select(["target_id", "target_sequence", "source"])
 
 
 SOURCE_LOADERS = {

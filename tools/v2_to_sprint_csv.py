@@ -75,19 +75,18 @@ def split_to_sprint_csvs(
             f"need at least (target_id, target_sequence)"
         )
 
-    # The split's protein_id is something like "Protein::5za2" - we need
-    # to derive the lookup key from it.
-    if protein_key == "pdb_id":
-        # strip the "Protein::" prefix and any "_chainX" suffix
+    # The split's protein_id may be in any of these formats observed
+    # across v1 corpora:
+    #   "Protein::5za2"                  (synthetic test data)
+    #   "prot:PDBBind:220c836fee080836"  (real v1 PDBBind: 16-char seq hash)
+    #   "tgt:DEKOIS:pim-2"               (DEKOIS - target name, no sequence)
+    # Take the rightmost colon-delimited piece. That's the part that
+    # matches our protein_seq_lookup target_id (which carries both
+    # pdb_id rows and seq_sha256-prefix rows).
+    if protein_key in ("pdb_id", "seq_sha256"):
         split = split.with_columns(
             pl.col("protein_id")
-            .str.replace(r"^Protein::", "")
-            .alias("target_lookup_key")
-        )
-    elif protein_key == "seq_sha256":
-        split = split.with_columns(
-            pl.col("protein_id")
-            .str.replace(r"^Protein::", "")
+            .str.split(":").list.last()
             .alias("target_lookup_key")
         )
     else:
