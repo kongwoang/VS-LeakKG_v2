@@ -58,7 +58,10 @@ def test_emits_three_partitions(tmp_path):
     assert counts["test"] == 1
     # Check the actual content
     train = pl.read_csv(out / "train.csv")
-    assert list(train.columns) == ["SMILES", "Target Sequence", "Label"]
+    # SPRINT-format CSV: first column is the unnamed row index, then
+    # SMILES / Target Sequence / Label. Polars reads the unnamed first
+    # column as a blank column name.
+    assert train.columns[1:] == ["SMILES", "Target Sequence", "Label"]
     assert train.height == 2
     assert "MKTAYIAKQRQ" in set(train["Target Sequence"].to_list())
 

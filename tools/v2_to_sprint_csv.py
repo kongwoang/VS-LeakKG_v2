@@ -108,7 +108,15 @@ def split_to_sprint_csvs(
             pl.col("smiles").is_not_null()
             & pl.col("Target Sequence").is_not_null()
         )
-        rows = sub.select(
+        # SPRINT's DTIDataModule reads CSVs with pandas's default
+        # index_col semantics, which assumes the first unnamed column
+        # is the index. DAVIS/BIOSNAP/BindingDB CSVs all ship with an
+        # explicit `,SMILES,Target Sequence,Label,...` header (note
+        # leading comma). We must match that to avoid SMILES being
+        # consumed as the dataframe index, which would manifest as
+        # `KeyError: 'SMILES'` downstream.
+        rows = sub.with_row_index(name="").select(
+            pl.col(""),
             pl.col("smiles").alias("SMILES"),
             pl.col("Target Sequence"),
             pl.col("label").alias("Label"),
