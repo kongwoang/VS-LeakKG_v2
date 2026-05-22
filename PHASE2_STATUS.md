@@ -88,6 +88,23 @@ structures for each unique UniProt. ~8h GPU·h work for the corpora.
 5. Compare PDBBind paper-split AUROC vs PDBBind v2 protein-clean
    AUROC — first Mode B audit number.
 
+## Update (2026-05-22 15:20 NZST)
+
+Attempted to unblock B1 by installing matching torchvision into the
+venv. The script's first step (`import torch` from the venv python)
+took >16 minutes wall and never completed — box was effectively
+unusable for fresh python startup despite load avg of ~20. Killed the
+fix attempt.
+
+This was the same fundamental NFS+box-load problem we saw with the
+original conda env on /vol/grid-solar, but now manifesting even on the
+fast workspace volume. The venv works fine for already-warm processes
+(Phase 1 used it without trouble) but a cold `import torch` against
+~5 GB of torch+cuda libs is unworkable when the box is contending.
+
+P2.2 SPRINT DAVIS smoke test is **deferred** until the box is quieter
+or until torch is symlinked into local /tmp (a future optimisation).
+
 ## What was achievable without a GPU
 
 We did get the codebase + data pipeline + Phase 1 to completion. The
