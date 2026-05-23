@@ -125,7 +125,7 @@ def process_one(args) -> tuple[bytes, bytes] | None:
         "atoms": atoms,
         "coordinates": coords,
         "pocket_atoms": pocket_atoms,
-        "pocket_coordinates": [pocket_coords],
+        "pocket_coordinates": pocket_coords,
         "smi": smi,
         "pocket": pdb_id,
         "label": float(label),

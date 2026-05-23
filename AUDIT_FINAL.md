@@ -1,6 +1,6 @@
 # VS-LeakKG v2 — final audit report
 
-**Date:** 2026-05-23
+**Date:** 2026-05-24
 **Code:** https://github.com/kongwoang/VS-LeakKG_v2 (HEAD as of writeup)
 **Compute:** VUW box (cuda12.ecs.vuw.ac.nz), 3× Quadro RTX 6000 24 GB
 
@@ -30,7 +30,7 @@ AUROC; AUPR is in the per-phase reports.
 
 | Regime | n_train | n_test | Morgan-RF AUROC (Phase 1) | SPRINT AUROC (Phase 2) | Δ (model) |
 |---|---:|---:|---:|---:|---:|
-| **random (control)** | 7,337 | 5,844 | **0.8058** | (training) | — |
+| **random (control)** | 7,337 | 5,844 | **0.8058** | **0.8370** | +0.031 |
 | ligand-clean  | 9,917 | 4,560 | 0.7070 | **0.7619** | +0.055 |
 | protein-clean | 7,337 | 5,844 | **0.5549** | **0.5890** | +0.034 |
 | dual-clean    | 8,192 | 5,429 | 0.6788 | **0.7306** | +0.052 |
@@ -40,24 +40,27 @@ train/val/test sizes as protein-clean, but the partition assignment is
 uniform-random instead of leakage-axis-clean. It keeps every form of leakage
 (ligand-axis, protein-axis, scaffold, structural similarity). If the v2 KG
 framework were doing no real work, random and protein-clean would score the
-same. They don't — random scores **+25pp** higher AUROC than protein-clean.
-That 25pp gap is the leakage signal the KG is *removing* on protein-clean.
-Same logic: ligand-clean drops 10pp from random; dual-clean drops 13pp. The
-SPRINT random control is currently training on GPU 2; result will fill in
-when it lands. The Morgan-RF random control row was added by
-`tools/build_random_pdbbind_split.py` + `tools/run_morgan_rf_random.py`.
+same. They don't — random scores **+25pp** (Morgan-RF) / **+25pp** (SPRINT)
+higher AUROC than protein-clean. That 25pp gap is the leakage signal the KG
+is *removing* on protein-clean. Same logic: ligand-clean drops 10pp / 8pp
+from random (Morgan-RF / SPRINT); dual-clean drops 13pp / 11pp. The Morgan-RF
+random control row was added by `tools/build_random_pdbbind_split.py` +
+`tools/run_morgan_rf_random.py`; SPRINT trained on the same split via the
+existing `train.py` `--task v2_pdbbind_random`.
 
 Within each model column (Group A row-set):
 
-|         | ligand→protein drop | ligand→dual drop |
-|---------|---:|---:|
-| Morgan-RF | −15.2pp | −2.8pp |
-| SPRINT    | −17.3pp | −3.1pp |
+|         | random→ligand drop | random→protein drop | random→dual drop | ligand→protein drop |
+|---------|---:|---:|---:|---:|
+| Morgan-RF | −9.9pp | **−25.1pp** | −12.7pp | −15.2pp |
+| SPRINT    | −7.5pp | **−24.8pp** | −10.6pp | −17.3pp |
 
-The drop pattern is consistent across the shallow and deep models. SPRINT
+The drop pattern is consistent across the shallow and deep models, and most
+strikingly so on protein-clean: both models lose ~25pp from the random control
+when the KG forbids any test-time protein from appearing in train. SPRINT
 closes about 4-5pp of the absolute AUROC gap on every regime (deep model +
 ProtBert beats Morgan-RF), but **does not close the leakage drop**: on
-protein-clean the model still loses ~17pp relative to its own ligand-clean
+protein-clean the model still loses ~25pp relative to its own random-control
 score. The shortcut isn't a Morgan-fingerprint artefact — a fully trained
 contemporary DTI model has it too.
 
@@ -94,16 +97,19 @@ corpus and cross-config comparisons remain out of scope. This is the
 
 **Shows:**
 - A leakage-axis-clean split materially changes apparent DTI performance.
-- The effect is model-invariant on PDBBind (Morgan-RF and SPRINT both lose ~16-17pp on protein-clean).
+- The effect is model-invariant on PDBBind: Morgan-RF and SPRINT both lose
+  ~25pp from random control on protein-clean (Morgan-RF 0.81→0.55, SPRINT
+  0.84→0.59). The leakage signal does not collapse when you swap the model.
 - The size of the effect varies dramatically by corpus — measurable v2 splits expose this.
 - AVE-style decoys (LIT-PCBA) successfully defeat ligand shortcuts; DUD-E / DEKOIS decoys do not.
 
 **Does not show:**
-- That LigUnity / DrugCLIP exhibit the same pattern. Both are pretrained models
+- That LigUnity exhibits the same pattern. DrugCLIP audit is in flight on the
+  same three v2 splits; LigUnity remains deferred. Both are pretrained models
   whose published training corpus does not match ours exactly; auditing them
   fairly needs either (a) a paper-config zero-shot eval on our test splits or
   (b) a full retrain on our splits with corpus-matched data prep (raw PDBBind
-  PDB + RDKit ligand conformers, ~1 day data prep). Scoped as future work.
+  PDB + RDKit ligand conformers, ~1 day data prep).
 - Effect on a second large-scale corpus with a deep model. SPRINT runs on
   DEKOIS / DUD-E / LIT-PCBA were not budget-feasible in this iteration (each
   corpus is 5-30× PDBBind size; one full training run per regime per corpus
