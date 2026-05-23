@@ -74,12 +74,12 @@ preprocessing. The only difference between rows is the **split regime**; the
 only difference between models is the listed model+config. Reporting test-set
 AUROC; AUPR is in the per-phase reports.
 
-| Regime | n_train | n_test | Morgan-RF AUROC (Phase 1) | SPRINT AUROC (Phase 2) | Δ (model) |
+| Regime | n_train | n_test | Morgan-LR AUROC | Morgan-RF AUROC | SPRINT AUROC |
 |---|---:|---:|---:|---:|---:|
-| **random (control)** | 7,337 | 5,844 | **0.8058** | **0.8370** | +0.031 |
-| ligand-clean  | 9,917 | 4,560 | 0.7070 | **0.7619** | +0.055 |
-| protein-clean | 7,337 | 5,844 | **0.5549** | **0.5890** | +0.034 |
-| dual-clean    | 8,192 | 5,429 | 0.6788 | **0.7306** | +0.052 |
+| **random (control)** | 7,337 | 5,844 | 0.7727 | **0.8058** | **0.8370** |
+| ligand-clean  | 9,917 | 4,560 | 0.6901 | 0.7070 | **0.7619** |
+| protein-clean | 7,337 | 5,844 | 0.6537 | **0.5549** | **0.5890** |
+| dual-clean    | 8,192 | 5,429 | 0.7016 | 0.6788 | **0.7306** |
 
 The **random row is a control**: same 19,037 PDBBind examples and same
 train/val/test sizes as protein-clean, but the partition assignment is
@@ -98,17 +98,24 @@ Within each model column (Group A row-set):
 
 |         | random→ligand drop | random→protein drop | random→dual drop | ligand→protein drop |
 |---------|---:|---:|---:|---:|
-| Morgan-RF | −9.9pp | **−25.1pp** | −12.7pp | −15.2pp |
-| SPRINT    | −7.5pp | **−24.8pp** | −10.6pp | −17.3pp |
+| Morgan-LR (linear) | −8.3pp | **−11.9pp** | −7.1pp | −3.6pp |
+| Morgan-RF (trees)  | −9.9pp | **−25.1pp** | −12.7pp | −15.2pp |
+| SPRINT (deep DTI)  | −7.5pp | **−24.8pp** | −10.6pp | −17.3pp |
 
-The drop pattern is consistent across the shallow and deep models, and most
-strikingly so on protein-clean: both models lose ~25pp from the random control
-when the KG forbids any test-time protein from appearing in train. SPRINT
-closes about 4-5pp of the absolute AUROC gap on every regime (deep model +
-ProtBert beats Morgan-RF), but **does not close the leakage drop**: on
-protein-clean the model still loses ~25pp relative to its own random-control
-score. The shortcut isn't a Morgan-fingerprint artefact — a fully trained
-contemporary DTI model has it too.
+The drop **direction** is invariant — every model loses on every clean
+regime. The drop **magnitude** scales with model capacity:
+
+- **Linear LR**: −12pp on protein-clean (limited memorization capacity)
+- **Tree RF**: −25pp on protein-clean (interaction features → high
+  capacity to memorize specific ligand-protein patterns)
+- **Deep SPRINT**: −25pp on protein-clean (same drop as RF despite
+  consuming ProtBert protein embeddings)
+
+The shortcut isn't a Morgan-fingerprint artefact — a fully trained
+contemporary DTI model has it too. More precisely: **high-capacity
+models (RF, SPRINT) leak twice as much as a linear baseline on
+protein-clean**. The KG's protein-clean filter penalizes models that
+memorize protein-specific patterns more than models that can't.
 
 **Statistical power.** PDBBind's test sets carry 4-5K examples per regime
 with both classes well-represented (38-60% positive rate). The standard
