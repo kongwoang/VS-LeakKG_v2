@@ -24,11 +24,13 @@ test changes measurably) — is on **PDBBind binary classification**:
 > **Holding model + config fixed and changing only the v2 KG split:
 > both Morgan-RF and SPRINT lose ~25pp AUROC from random control to
 > protein-clean on PDBBind. The leakage signal is real, large, and
-> model-invariant.**
+> direction-invariant across three models (linear LR, tree RF, deep
+> SPRINT) — though magnitude scales with model capacity (LR drops 12pp,
+> RF + SPRINT drop 25pp).**
 
 | Group | Corpus | Task | What the KG controls | Result |
 |---|---|---|---|---|
-| **A** | PDBBind (19k rows) | Binary classification (Morgan-RF + SPRINT) | Train/test partition + which axis (ligand / protein / scaffold / pocket / dual / strict) leaks | **−25pp AUROC** from random→protein-clean, model-invariant across shallow + deep; z ≈ 19, p ≪ 1e-30 |
+| **A** | PDBBind (19k rows) | Binary classification (3 models: Morgan-LR, Morgan-RF, SPRINT) | Train/test partition + which axis (ligand / protein / scaffold / pocket / dual / strict) leaks | **All 3 models drop on every clean regime**. random→protein-clean: −12pp LR, −25pp RF, −25pp SPRINT. RF + SPRINT z ≈ 19, p ≪ 1e-30. Drop direction is model-invariant; magnitude scales with model capacity. |
 | **A++** | DEKOIS / DUD-E / LIT-PCBA | Binary classification (Morgan-RF) | Same axes, random-control calibrated per corpus | DEKOIS −13pp, DUD-E −8pp on protein-clean; LIT-PCBA flat (AVE works — negative control) |
 | **C** | DUD-E (102 targets) + DEKOIS (62) + LIT-PCBA (15) | Retrieval (per-target BEDROC, our DrugCLIP eval) | Target-level KG splits (target / active / scaffold / dual axes) | Per-target variance dominates; frozen-checkpoint zero-shot surfaces subset-selection not training-time leakage gaps |
 | **C++** | Same corpora, **26 methods** via LigUnity's published benchmark | Same retrieval task, paper-comparable per-target metrics | Apply v2 KG splits as filter; cross-method sign-test | **21/26 DUD-E methods drop on target_clean (sign-test p=0.0025)** — cross-method direction-consistency confirms KG filter is doing real structural work |
