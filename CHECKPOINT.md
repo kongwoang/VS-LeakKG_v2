@@ -1,4 +1,4 @@
-# Resume checkpoint — 2026-05-24 01:05 NZST
+# Resume checkpoint — 2026-05-24 01:45 NZST
 
 ## Where things stand
 
@@ -12,85 +12,70 @@
 | SPRINT ligand-clean | done | AUROC 0.7619 |
 | SPRINT protein-clean | done | AUROC 0.5890 |
 | SPRINT dual-clean | done | AUROC 0.7306 |
-| DrugCLIP ligand-clean | training | best_valid_bedroc 0.154 @ epoch 1 |
-| DrugCLIP protein-clean | chain-queued | — |
-| DrugCLIP dual-clean | chain-queued | — |
+| DrugCLIP retrain on v2 | **abandoned** | mode collapse — corpus too small |
+| DrugCLIP paper ckpt, ligand | done | per-pocket AUROC 0.560 |
+| DrugCLIP paper ckpt, protein | done | per-pocket AUROC 0.561 |
+| DrugCLIP paper ckpt, dual | done | per-pocket AUROC 0.574 |
+| DrugCLIP paper ckpt, random | **building LMDB** | — |
 
-## DrugCLIP retrain — what happened
+## DrugCLIP story (final)
 
-The first chain (batch=8, update-freq=1) hit **mode collapse** by epoch 2:
-loss locked at 3.0 (≈ ln(8), uniform softmax), gnorm → 0.002, gradients
-silently dropped, valid_bedroc plateaued at random. Root cause: in-batch
-softmax with only 7 negatives per anchor (batch=8) collapses to the trivial
-all-embeddings-equal solution.
+Two attempts, neither produced a clean Group-A row but both are
+informative audit findings:
 
-Fix: `--update-freq 6` => effective batch = 48 (matches paper recipe). At
-the new effective batch, gradients stay alive (gnorm 56-75) and training
-loss decreases from 2.97 to 2.85 in the first two epochs. valid_bedroc
-still peaks at epoch 1 (0.154) because the contrastive in-batch objective
-doesn't directly optimize our binary-classification test metric — but the
-saved `checkpoint_best.pt` is the right epoch to evaluate.
+**Attempt 1 — retrain on v2 train splits**. Mode collapse by epoch 2.
+First chain (batch=8, update-freq=1) had gnorm→0; switched to
+update-freq=6 (effective batch=48 to match paper) restored gradient flow
+but valid_bedroc still plateaued — root cause is **corpus size, not
+optimizer**. Paper trains on ~100K+ HomoAug-augmented positives; our v2
+train splits ship ≤10K positives. Contrastive in-batch-softmax can't
+converge on this scale.
 
-Broken first-attempt run dirs preserved as `_runs.broken-bs8` /
-`.log.broken-bs8` for forensics.
+**Attempt 2 — paper checkpoint zero-shot**. Downloaded the published
+`checkpoint_best.pt` (1.18 GB; trained on full PDBBind 2020 + HomoAug)
+and ran a per-pocket retrieval AUROC on each v2 test split. Result is
+essentially flat across regimes (0.56-0.57). Read this as **train-test
+contamination dominating** — the paper's training corpus IS PDBBind
+2020+HomoAug, our v2 test splits are subsets. The v2 leakage filter does
+not separate the published model from its in-domain performance.
 
-## Running now
+Both findings are documented in `AUDIT_FINAL.md` under the
+"DrugCLIP — third-model attempt" section. The audit headline (Morgan-RF
++ SPRINT ~25pp drop on protein-clean) is unchanged.
 
-| Process | Purpose | GPU | nohup pid |
-|---|---|---|---|
-| `chain_drugclip.sh 2 50 8` | Auto-launches ligand → protein → dual sequentially (update-freq=6, effective batch 48) | 2 | 1895884 |
-| DrugCLIP ligand training | inside the chain | 2 | 1895893 |
+## Pending: random-control LMDB for DrugCLIP paper-ckpt
 
-ETA: ~140 min/regime × 3 regimes = ~7h total. Expect chain to finish
-~08:00 NZST.
+Random-split DrugCLIP LMDB build is in flight on VUW:
+- pid: 1969319 (and 16 mp workers)
+- log: `/vol/dl-nguyenb5-solar/users/hoangpc/drugclip_runs/lmdb_build_random.log`
+- ETA: ~15 min total (5 min train + 4 min valid + 4 min test)
 
-## Verify everything is alive
-
+When `data/v2_pdbbind_random/test.lmdb` lands, run:
 ```bash
 ssh kongwoang "ssh VUW '
-ps -p 1895884 -o pid,etime,stat,cmd 2>/dev/null
-ps -p 1895893 -o pid,etime,stat,cmd 2>/dev/null
-nvidia-smi --query-gpu=index,memory.used,memory.free --format=csv'"
+ln -sfn ../dict_mol.txt /vol/dl-nguyenb5-solar/users/hoangpc/DrugCLIP/data/v2_pdbbind_random/dict_mol.txt
+ln -sfn ../dict_pkt.txt /vol/dl-nguyenb5-solar/users/hoangpc/DrugCLIP/data/v2_pdbbind_random/dict_pkt.txt
+bash /vol/dl-nguyenb5-solar/users/hoangpc/eval_drugclip_paperckpt_retrieval.sh 1
+'"
 ```
+(retrieval script currently runs ligand/protein/dual — extend to include
+random by editing the for-loop, or run the random one directly).
 
-## Resume — verification command
+Then plug random numbers into both DrugCLIP tables in AUDIT_FINAL.md.
 
-```bash
-ssh kongwoang "ssh VUW '
-echo === DrugCLIP regime status ===
-for r in ligand protein dual; do
-    echo --- \$r ---
-    grep -E \"valid_bedroc|done training\" /vol/dl-nguyenb5-solar/users/hoangpc/drugclip_runs/v2_pdbbind_\${r}.log 2>/dev/null | tail -5
-    ls -la /vol/dl-nguyenb5-solar/users/hoangpc/drugclip_runs/v2_pdbbind_\${r}_runs/checkpoint_best.pt 2>/dev/null
-done
-echo === Chain log ===
-tail -10 /vol/dl-nguyenb5-solar/users/hoangpc/drugclip_runs/chain.log'"
-```
+## What's running now
 
-## When all 3 runs finish — test eval
+| Process | Purpose | nohup pid |
+|---|---|---|
+| v2_to_drugclip_lmdb random | builds train/valid/test.lmdb for random split | 1969319 |
 
-The DrugCLIP custom test evaluator lives at:
-- Script: `DrugCLIP/unimol/eval_drugclip_v2.py` (computes per-row pocket·mol
-  dot product → AUROC + AUPR over binary labels in test.lmdb)
-- Wrapper: `/vol/dl-nguyenb5-solar/users/hoangpc/eval_drugclip.sh`
-
-For each regime, run on GPU 1 (which is free; GPU 2 hosts the next chain):
-
-```bash
-ssh kongwoang "ssh VUW 'cd /vol/dl-nguyenb5-solar/users/hoangpc && \
-    for r in ligand protein dual; do
-        bash eval_drugclip.sh \$r 1
-    done'"
-```
-
-Logs land at `drugclip_runs/v2_pdbbind_<regime>_TEST.log`. Each eval is
-fast (~1-2 min).
+GPU 2 is idle (no training in flight). GPU 0/1 are someone else's.
 
 ## What's already done and committed
 
 | File | Purpose |
 |---|---|
-| `AUDIT_FINAL.md` | Unified audit deliverable. Has Morgan-RF + SPRINT all 4 rows including random control |
+| `AUDIT_FINAL.md` | Unified audit deliverable with DrugCLIP findings + Morgan-RF + SPRINT all 4 rows incl. random control |
 | `PHASE2_SPRINT_FINAL.md` | SPRINT details + fairness statement |
 | `PHASE1_FINAL_REPORT.md` | Phase 1 multi-corpus baseline |
 | `tools/build_random_pdbbind_split.py` | random split builder |
@@ -100,28 +85,22 @@ fast (~1-2 min).
 
 ## On VUW
 
-Custom artifacts (not in repo, lives on VUW only):
-- `/vol/dl-nguyenb5-solar/users/hoangpc/launch_drugclip.sh` — train launcher (update-freq=6 patched in)
-- `/vol/dl-nguyenb5-solar/users/hoangpc/chain_drugclip.sh` — sequential ligand→protein→dual
-- `/vol/dl-nguyenb5-solar/users/hoangpc/eval_drugclip.sh` — test eval launcher
-- `/vol/dl-nguyenb5-solar/users/hoangpc/DrugCLIP/unimol/eval_drugclip_v2.py` — custom evaluator
-- `/vol/dl-nguyenb5-solar/users/hoangpc/SPRINT/run_test_only.py` — SPRINT weights_only=False patch
+Custom artifacts (training infra, not in repo):
+- `launch_drugclip.sh` — train launcher (update-freq=6, the principled
+  paper-recipe batch but doesn't fix the corpus size)
+- `chain_drugclip.sh` — sequential ligand→protein→dual (deprecated, the
+  retrain path was abandoned)
+- `eval_drugclip.sh` — flat-AUROC eval launcher
+- `eval_drugclip_paperckpt.sh` — flat-AUROC across all 3 splits for paper ckpt
+- `eval_drugclip_paperckpt_retrieval.sh` — per-pocket retrieval AUROC for paper ckpt
+- `DrugCLIP/eval_drugclip_v2.py` — flat AUROC evaluator
+- `DrugCLIP/eval_drugclip_v2_retrieval.py` — per-pocket retrieval evaluator
+- `SPRINT/run_test_only.py` — SPRINT weights_only=False patch
+- Mirror copies live under `D:\hoangpc\VS-LeakKG\.tmp\` on the dev box
 
-Mirror copies under `D:\hoangpc\VS-LeakKG\.tmp\` for reference (these are
-not in the v2 repo deliberately — they belong with the training infra, not
-the audit codebase).
+Paper-checkpoint cache: `/vol/dl-nguyenb5-solar/users/hoangpc/drugclip_data/paper_ckpt/drugclip_data/checkpoint_best.pt` (1.18 GB, from gdown).
 
 ## Envs
 
-- `drugclip_env` (DrugCLIP only): torch 2.4.0+cu121, numpy 1.26.4, unicore
-  from github.com/dptech-corp/Uni-Core source. Path:
-  `/vol/dl-nguyenb5-solar/users/hoangpc/envs/drugclip_env`.
-- `vsleak2` (SPRINT and v2 baselines): torch 2.12 + numpy 2.4. Path:
-  `/vol/dl-nguyenb5-solar/users/hoangpc/envs/vsleak2`.
-
-## Tracking
-
-Task IDs of work in flight: #132 (DrugCLIP inference + optional retrain),
-#138 (fp16 instability investigation; root cause = small-batch contrastive
-collapse), #140 (write custom evaluator — script written, awaiting
-checkpoints to run against).
+- `drugclip_env`: torch 2.4.0+cu121, numpy 1.26.4, unicore from Uni-Core source. Path: `/vol/dl-nguyenb5-solar/users/hoangpc/envs/drugclip_env`.
+- `vsleak2`: torch 2.12 + numpy 2.4 (SPRINT + v2 baselines + LMDB build). Path: `/vol/dl-nguyenb5-solar/users/hoangpc/envs/vsleak2`.
