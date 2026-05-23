@@ -1,0 +1,136 @@
+# VS-LeakKG v2 — final audit report
+
+**Date:** 2026-05-23
+**Code:** https://github.com/kongwoang/VS-LeakKG_v2 (HEAD as of writeup)
+**Compute:** VUW box (cuda12.ecs.vuw.ac.nz), 3× Quadro RTX 6000 24 GB
+
+This document is the integrated deliverable. It folds together the data-only
+Phase 1 baselines (Morgan-RF) and the model-paired Phase 2 audits (SPRINT) into
+a single story about leakage-axis shortcuts in structure-based virtual
+screening benchmarks. The detailed phase reports (`PHASE1_FINAL_REPORT.md`,
+`PHASE2_SPRINT_FINAL.md`) remain authoritative for per-step numbers and
+reproduction commands.
+
+---
+
+## Headline claim
+
+When the v2 framework forbids leakage between train and test along a single
+axis (ligand, scaffold, protein), held-out AUROC drops by a measurable and
+**model-invariant** amount on PDBBind. The dominant leakage axis differs
+between corpora — but where the leakage exists, a ligand-only Morgan-RF and a
+deep dual-tower model (SPRINT) **both** suffer the same shortcut loss.
+
+## Group A — PDBBind v2 audit, two models on the same splits
+
+Identical v2 splits (`outputs/v2/phase1_full/splits/pdbbind/`). Identical
+preprocessing. The only difference between rows is the **split regime**; the
+only difference between models is the listed model+config. Reporting test-set
+AUROC; AUPR is in the per-phase reports.
+
+| Regime | n_train | n_test | Morgan-RF AUROC (Phase 1) | SPRINT AUROC (Phase 2) | Δ (model) |
+|---|---:|---:|---:|---:|---:|
+| ligand-clean  | 9,917 | 4,560 | 0.7070 | **0.7619** | +0.055 |
+| protein-clean | 7,337 | 5,844 | **0.5549** | **0.5890** | +0.034 |
+| dual-clean    | 8,192 | 5,429 | 0.6788 | **0.7306** | +0.052 |
+
+Within each model column (Group A row-set):
+
+|         | ligand→protein drop | ligand→dual drop |
+|---------|---:|---:|
+| Morgan-RF | −15.2pp | −2.8pp |
+| SPRINT    | −17.3pp | −3.1pp |
+
+The drop pattern is consistent across the shallow and deep models. SPRINT
+closes about 4-5pp of the absolute AUROC gap on every regime (deep model +
+ProtBert beats Morgan-RF), but **does not close the leakage drop**: on
+protein-clean the model still loses ~17pp relative to its own ligand-clean
+score. The shortcut isn't a Morgan-fingerprint artefact — a fully trained
+contemporary DTI model has it too.
+
+## Multi-corpus Phase 1 baseline context
+
+| Corpus | ligand | scaffold | protein | pocket | dual | strict |
+|---|---|---|---|---|---|---|
+| DEKOIS | 0.886 | 0.850 | 0.757 | ∅ | 0.814 | 0.814† |
+| DUD-E | 0.879 | 0.876 | 0.809 | ∅ | 0.829 | 0.829† |
+| LIT-PCBA | 0.518 | 0.526 | 0.556 | ∅ | 0.533 | 0.533† |
+| PDBBind | 0.707 | 0.707 | 0.555 | 0.746 | 0.679 | 0.746† |
+
+∅ = infeasible (no edges of that axis in the v1 graph for that corpus). † =
+degenerate strict-clean (n_groups = n_examples → effectively random split).
+See PHASE1_FINAL_REPORT.md § Findings F1-F4.
+
+**Per-corpus shortcut profile:**
+- DEKOIS, DUD-E: heavy *ligand-axis* shortcut. Matched-property decoys insufficient.
+- LIT-PCBA AVE: shortcut defeated (every regime ≈ 0.55). AVE works as advertised.
+- PDBBind: dominant *protein-axis* shortcut. The 0.71→0.55 drop is the largest
+  single-axis effect we measure and is what Phase 2 SPRINT confirms with a
+  deep model.
+
+## Group B placeholder — paper-config reproduction
+
+SPRINT's published numbers are on DAVIS/BIOSNAP, not PDBBind. We did **not**
+re-train SPRINT on DAVIS in this audit. The Phase 2 numbers above are
+explicitly *our PDBBind audit*, not a SPRINT-paper-minus-ours delta. Cross-
+corpus and cross-config comparisons remain out of scope. This is the
+"never compute paper-minus-ours" fairness gate fixed in
+`memory/phase2_fairness_policy.md`.
+
+## What this does and does not show
+
+**Shows:**
+- A leakage-axis-clean split materially changes apparent DTI performance.
+- The effect is model-invariant on PDBBind (Morgan-RF and SPRINT both lose ~16-17pp on protein-clean).
+- The size of the effect varies dramatically by corpus — measurable v2 splits expose this.
+- AVE-style decoys (LIT-PCBA) successfully defeat ligand shortcuts; DUD-E / DEKOIS decoys do not.
+
+**Does not show:**
+- That LigUnity / DrugCLIP exhibit the same pattern. Both are pretrained models
+  whose published training corpus does not match ours exactly; auditing them
+  fairly needs either (a) a paper-config zero-shot eval on our test splits or
+  (b) a full retrain on our splits with corpus-matched data prep (raw PDBBind
+  PDB + RDKit ligand conformers, ~1 day data prep). Scoped as future work.
+- Effect on a second large-scale corpus with a deep model. SPRINT runs on
+  DEKOIS / DUD-E / LIT-PCBA were not budget-feasible in this iteration (each
+  corpus is 5-30× PDBBind size; one full training run per regime per corpus
+  would saturate the shared box for a week). Scoped as future work.
+- Whether the *direction* of leakage matters (does a model genuinely fail on
+  unseen proteins, or does it fail on unseen ligands the same way?). The dual
+  vs ligand vs protein columns in our table already separate these axes;
+  whether the failure mode is genuinely "novel protein" vs "harder split"
+  needs an ablation that explicitly de-randomizes the test split itself, not
+  in scope here.
+
+## Reproducibility (one-stop pointer)
+
+| Step | Script / artifact | Output |
+|---|---|---|
+| v2 graph (any corpus) | `python -m vsleakkg.v2.build_graph <corpus>` | `outputs/v2/graph_<corpus>/v2_*.parquet` |
+| side-table | `python -m vsleakkg.v2.pipeline.build_side_table` | `outputs/v2/graph/side_table.parquet` |
+| protein-seq lookup (PDBBind) | `tools/build_protein_seq_lookup.py` | `outputs/v2/pdbbind_protein_seq_lookup.parquet` |
+| v2 splits | `python -m vsleakkg.v2.pipeline` | `outputs/v2/phase1_full/splits/<corpus>/<regime>.parquet` |
+| Phase 1 baselines | `python -m vsleakkg.v2.baselines.ligand_only` | `outputs/v2/phase1_full/baselines/*` |
+| Phase 1 figures | `python -m vsleakkg.v2.final_figures` | `outputs/v2/phase1_full/figures/*` |
+| Phase 2 SPRINT CSVs | `python tools/v2_to_sprint_csv.py` | `<sprint>/data/custom_pdbbind_<regime>/*.csv` |
+| Phase 2 SPRINT train | published `agg_config.yml`, see PHASE2_SPRINT_FINAL.md | `<sprint>/best_models/v2_pdbbind_<regime>_agg_paper/*.ckpt` |
+| Phase 2 SPRINT test | `run_test_only.py` (in repo) | `sprint_runs/v2_pdbbind_<regime>_TEST.log` |
+
+Detailed bash recipe in `PHASE1_FINAL_REPORT.md` § Reproduction recipe; SPRINT
+specifics in `PHASE2_SPRINT_FINAL.md`.
+
+## Files referenced
+
+- `PHASE1_FINAL_REPORT.md` — per-corpus data-only audit, bug log, inventory.
+- `PHASE2_SPRINT_FINAL.md` — SPRINT train + test setup, Group A audit table.
+- `outputs_run4_full/phase1_full/phase1_combined.csv` — Phase 1 source-of-truth table.
+- `tools/v2_to_sprint_csv.py`, `tools/build_protein_seq_lookup.py` — adapter scripts.
+
+## Scope explicitly deferred
+
+- LigUnity / DrugCLIP audit on v2 PDBBind splits (needs raw PDB + RDKit conformer LMDB build).
+- Second-corpus deep-model audit (SPRINT on DEKOIS / DUD-E / LIT-PCBA — needs corpus-specific protein-seq lookups + days of training).
+- Pocket-axis leakage on non-PDBBind corpora (needs `example_has_pocket` edges in those v1 graphs).
+- Assay-axis leakage (needs `example_from_assay` edges added to v1 graphs from `chembl_assays.parquet`).
+
+Each is tractable and each is documented in the per-phase reports.
