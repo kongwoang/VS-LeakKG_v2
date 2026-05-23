@@ -17,10 +17,9 @@
 
 Both models drop ~25pp from random control to protein-clean. Model-invariant.
 
-### Group C — DUD-E retrieval-native audit (all 102 targets)
+### Group C — Retrieval-native audit (two corpora)
 
-Paper-checkpoint zero-shot. Pockets: 65 from PDBBind 2020 + 37 fetched
-from RCSB. All 102 targets in scope.
+#### DUD-E (102 targets in scope, 65 PDBBind-overlap + 37 RCSB-fetched)
 
 | Regime | n_test | AUROC mean ± std | BEDROC mean ± std |
 |---|---:|---:|---:|
@@ -29,16 +28,29 @@ from RCSB. All 102 targets in scope.
 | active_clean  | 35 | 0.454 ± 0.226 | 0.075 ± 0.129 |
 | dual_clean    | 35 | 0.454 ± 0.226 | 0.075 ± 0.129 |
 
-Findings:
-- AUROC flat across regimes (0.45-0.47, 2pp range)
-- BEDROC ordered random > target_clean > active_clean (expected direction
-  for leakage gap) but random→active = 0.057 ± 0.047 (z=1.2, p≈0.23) —
-  NOT statistically significant
-- Per-target variance still dominates (std 0.19-0.23, range 0.04-0.86)
-- active_clean ≡ dual_clean identically (DUD-E scaffold/active sharing
-  subsumes Pfam family sharing)
+#### DEKOIS 2.0 (62 targets in scope, second corroborating corpus)
+
+| Regime | n_test | AUROC mean ± std | BEDROC mean ± std |
+|---|---:|---:|---:|
+| target_random  | 18 | 0.479 ± 0.159 | 0.034 ± 0.052 |
+| target_clean   | 18 | 0.549 ± 0.192 | 0.042 ± 0.067 |
+| active_clean   | 18 | 0.467 ± 0.184 | 0.030 ± 0.061 |
+| scaffold_clean | 15 | 0.499 ± 0.182 | 0.041 ± 0.060 |
+| dual_clean     | 22 | 0.431 ± 0.136 | 0.018 ± 0.041 |
+
+Findings (both corpora):
+- DEKOIS BEDROC much lower than DUD-E (0.02-0.04 vs 0.08-0.13) — stricter
+  property-matched decoys + lower DEKOIS/PDBBind overlap
+- dual_clean is lowest in both — most restrictive split selects hardest
+  test targets (subset-selection effect)
+- DEKOIS scaffold_clean is NON-DEGENERATE (unlike DUD-E) — DEKOIS
+  scaffold sharing across targets is sparser
+- No statistically-significant leakage gap in either corpus
+  (z ≈ 1-1.2, p > 0.2 for random→clean deltas)
+- Per-target variance dominates across both corpora
 - Honest interpretation: SUBSET-SELECTION effects, not training-time
-  leakage gap (frozen paper ckpt doesn't see split filtering)
+  leakage gap (frozen paper ckpt doesn't see split filtering). Same
+  conclusion holds across both retrieval corpora.
 
 ## Deferred (in priority order)
 
@@ -58,6 +70,7 @@ Findings:
 
 | Commit | Content |
 |---|---|
+| ee0ddac | [Group C] DEKOIS 2.0 retrieval audit — second corroborating corpus |
 | 3a60d04 | [Group C+] scale DUD-E retrieval audit to all 102 targets |
 | d77d843 | [Group C+] fetch_missing_dude_pockets.py — RCSB download + pocket extraction |
 | be6afd0 | [Group C] retrieval-native audit tooling for DUD-E (6 scripts under tools/v2_retrieval/) |
