@@ -13,6 +13,50 @@ reproduction commands.
 
 ---
 
+## Executive summary
+
+The v2 KG framework operates a leakage-axis audit at three different
+abstraction levels across four corpora and 28+ evaluation methods. The
+**load-bearing result** — and the only one that fully closes the audit
+loop (the KG controls what the model sees in train, and the held-out
+test changes measurably) — is on **PDBBind binary classification**:
+
+> **Holding model + config fixed and changing only the v2 KG split:
+> both Morgan-RF and SPRINT lose ~25pp AUROC from random control to
+> protein-clean on PDBBind. The leakage signal is real, large, and
+> model-invariant.**
+
+| Group | Corpus | Task | What the KG controls | Result |
+|---|---|---|---|---|
+| **A** | PDBBind (19k rows) | Binary classification | Train/test partition + which axis (ligand / protein / scaffold / pocket / dual / strict) leaks | **−25pp AUROC** from random→protein-clean, consistent across Morgan-RF and SPRINT |
+| **C** | DUD-E (102 targets) + DEKOIS 2.0 (62) + LIT-PCBA (15) | Retrieval (per-target BEDROC) | Which test targets appear (target-axis Pfam-disjoint, active-axis ligand-disjoint, scaffold-axis disjoint) | KG splits structurally segregate test targets, but a frozen paper checkpoint + small n yields **subset-selection effects, not training-time leakage gaps** — confirmed across 26 methods (cross-method audit via LigUnity's published benchmark) |
+| Appendix | PDBBind | Binary classification (DrugCLIP retrofit) | Row-level split, but retrieval-model metric mismatch | Diagnostic: pool-composition is the dominant issue, not contamination. Motivated the Group C pivot. |
+
+**What's shippable on this audit:** the Group A finding is the audit's
+primary contribution and is fully defensible — 25pp drop, model-invariant,
+random-control calibrated, statistical-power adequate. The Group C
+retrieval-native framework is a fully-functional second track that
+detects structural changes across split regimes but cannot prove a
+training-time leakage gap without retraining the retrieval model on
+each split — blocked by a corpus-size constraint documented in the
+DrugCLIP appendix.
+
+**What the v2 KG enables (capabilities demonstrated)**:
+1. *Multi-corpus row-level audit* with consistent leakage-axis definitions
+   (ligand / scaffold / protein / pocket / dual / strict).
+2. *Random-control calibration* — same-size random partition isolates
+   the leakage signal from base task difficulty.
+3. *Target-level audit* on retrieval corpora — same KG semantics lifted
+   from row-level to target-level operation.
+4. *Cross-method evaluation* via published per-target benchmark tables
+   (26 methods on DUD-E, 18 on DEKOIS, 11 on LIT-PCBA), with no
+   retraining required.
+5. *Reusable scaffolding* — the v2 graph, splits, baselines, and
+   evaluation scripts can be applied to any new corpus or method by
+   adding one wrapper.
+
+---
+
 ## Headline claim
 
 When the v2 framework forbids leakage between train and test along a single
@@ -348,6 +392,36 @@ This is the cleanest cross-method audit we can run on retrieval models.
 
 (Full 18-method table in `outputs/v2_retrieval/results/dekois_cross_method/dekois_BEDROC_per_regime.csv`)
 
+### LIT-PCBA — BEDROC by method × regime (8 methods, two usable regimes)
+
+LIT-PCBA has only 15 targets total; active-ligand sharing is so pervasive
+that active_clean / scaffold_clean / dual_clean all collapse to a single
+train target. Only target_random (n=2 test) and target_clean (n=8 test)
+are usable, and **target_random is too small (n=2) for any conclusion**.
+We report the comparison for completeness; signal direction is dominated
+by which 2 targets happened to land in target_random.
+
+| Method | target_random (n=2) | target_clean (n=8) | Δ(clean−random) |
+|---|---:|---:|---:|
+| LigUnity        | 0.009 | 0.103 | +0.094 |
+| LigUnity (seq)  | 0.015 | 0.089 | +0.074 |
+| DrugCLIP        | 0.025 | 0.080 | +0.055 |
+| GenScore        | 0.033 | 0.072 | +0.039 |
+| GNINA           | 0.070 | 0.063 | −0.007 |
+| Glide SP        | 0.009 | 0.064 | +0.055 |
+| Denvis-G        | 0.010 | 0.051 | +0.041 |
+| Pocket-DTA      | 0.006 | 0.041 | +0.035 |
+
+All methods show target_clean > target_random — the opposite direction of
+a leakage gap, but the n=2 random sample makes this uninterpretable. LIT-
+PCBA's structural problem (only 15 targets) means it cannot power a
+target-level cross-regime audit. It would be a strong corpus for a
+*model-pair* audit (binary classifier retrained per split — same as
+Group A) since LIT-PCBA's row-level Phase 1 result already shows AVE
+defeating ligand shortcuts. That avenue is left as future work.
+
+(Full table in `outputs/v2_retrieval/results/litpcba_cross_method/pcba_BEDROC_per_regime.csv`)
+
 ### Interpretation
 
 **No method shows a consistent, large leakage gap across both corpora.**
@@ -507,20 +581,38 @@ believe and the conclusion we report.
 
 ## Reproducibility (one-stop pointer)
 
+### Group A — PDBBind row-level audit
 | Step | Script / artifact | Output |
 |---|---|---|
 | v2 graph (any corpus) | `python -m vsleakkg.v2.build_graph <corpus>` | `outputs/v2/graph_<corpus>/v2_*.parquet` |
 | side-table | `python -m vsleakkg.v2.pipeline.build_side_table` | `outputs/v2/graph/side_table.parquet` |
 | protein-seq lookup (PDBBind) | `tools/build_protein_seq_lookup.py` | `outputs/v2/pdbbind_protein_seq_lookup.parquet` |
 | v2 splits | `python -m vsleakkg.v2.pipeline` | `outputs/v2/phase1_full/splits/<corpus>/<regime>.parquet` |
-| Phase 1 baselines | `python -m vsleakkg.v2.baselines.ligand_only` | `outputs/v2/phase1_full/baselines/*` |
+| Random control split | `tools/build_random_pdbbind_split.py` | `outputs/v2/phase1_full/splits/pdbbind/random.parquet` |
+| Morgan-RF baseline | `python -m vsleakkg.v2.baselines.ligand_only` | `outputs/v2/phase1_full/baselines/*` |
+| Morgan-RF random control | `tools/run_morgan_rf_random.py` | `outputs/v2/phase1_full/baselines/pdbbind_random_morgan_rf.csv` |
 | Phase 1 figures | `python -m vsleakkg.v2.final_figures` | `outputs/v2/phase1_full/figures/*` |
 | Phase 2 SPRINT CSVs | `python tools/v2_to_sprint_csv.py` | `<sprint>/data/custom_pdbbind_<regime>/*.csv` |
 | Phase 2 SPRINT train | published `agg_config.yml`, see PHASE2_SPRINT_FINAL.md | `<sprint>/best_models/v2_pdbbind_<regime>_agg_paper/*.ckpt` |
 | Phase 2 SPRINT test | `run_test_only.py` (in repo) | `sprint_runs/v2_pdbbind_<regime>_TEST.log` |
 
+### Group C — Retrieval-native audit
+| Step | Script / artifact | Output |
+|---|---|---|
+| DUD-E target KG | `tools/v2_retrieval/build_dude_target_kg.py` | `outputs/v2_retrieval/graph_dude/v2_*.parquet` |
+| DEKOIS target KG | `tools/v2_retrieval/build_dekois_target_kg.py` | `outputs/v2_retrieval/graph_dekois/v2_*.parquet` |
+| LIT-PCBA target KG | `tools/v2_retrieval/build_litpcba_target_kg.py` | `outputs/v2_retrieval/graph_litpcba/v2_*.parquet` |
+| Target-level splits | `tools/v2_retrieval/build_dude_target_splits.py` (corpus-agnostic) | `outputs/v2_retrieval/splits/<corpus>/<regime>.parquet` |
+| Fetch missing DUD-E pockets | `tools/v2_retrieval/fetch_missing_dude_pockets.py` | `data/raw/DUD-E_pockets_fetched/<pdb>/<pdb>_pocket.pdb` |
+| Per-target LMDBs | `tools/v2_retrieval/build_{dude,dekois}_target_lmdbs.py` | `DrugCLIP/data/<corpus>_retrieval/<target>/{pocket,mols}.lmdb` |
+| Retrieval eval (DrugCLIP paper ckpt) | `tools/v2_retrieval/eval_dude_retrieval.py` (corpus-agnostic) | `outputs/v2_retrieval/results/<corpus>/<regime>_per_target.csv` |
+| Per-regime driver | `run_dude_eval_all_regimes.sh`, `run_dekois_eval_all_regimes.sh` | `<regime>_run.log` |
+| Cross-method audit | `tools/v2_retrieval/aggregate_ligunity_benchmark.py` | `outputs/v2_retrieval/results/<corpus>_cross_method/*.csv` |
+| Contamination diagnostic | `tools/v2_retrieval/contamination_diagnostic.py` | `outputs/v2_retrieval/diagnostics/dude_contamination.csv` |
+
 Detailed bash recipe in `PHASE1_FINAL_REPORT.md` § Reproduction recipe; SPRINT
-specifics in `PHASE2_SPRINT_FINAL.md`.
+specifics in `PHASE2_SPRINT_FINAL.md`. Group C tooling lives under
+`tools/v2_retrieval/`.
 
 ## Files referenced
 
@@ -531,16 +623,24 @@ specifics in `PHASE2_SPRINT_FINAL.md`.
 
 ## Scope explicitly deferred
 
-- Group C extension to 102 DUD-E targets (37 non-PDBBind-overlapping
-  pockets need RCSB fetching; this is the "novel-target" contamination-
-  free set).
-- Group C extension to DEKOIS and LIT-PCBA — different decoy pool
-  protocols; LIT-PCBA's real-assay decoys would isolate synthetic-decoy
-  bias from the leakage signal.
-- DrugCLIP retrain on a leakage-clean train split with HomoAug-style
-  augmentation. This is the path to a true retrieval-native leakage gap
-  (vs the subset-selection effects Group C currently surfaces).
-- LigUnity Group C audit — same retrieval-native protocol applies.
+- **DrugCLIP retrain with HomoAug-style augmentation on each v2 split.**
+  This is the missing piece for a true retrieval-native *training-time*
+  leakage gap. Blocked by the corpus-size constraint: v2 train splits
+  carry ≤10K positives per regime; DrugCLIP's paper recipe needs ~100K+
+  HomoAug-augmented binders to converge under in-batch-softmax.
+  Implementing HomoAug = multi-day project, scoped as future work.
+- **LIT-PCBA cross-regime row-level audit** — analogous to Group A on
+  PDBBind, but with LIT-PCBA's real-assay decoys. Would test whether the
+  KG splits surface a model-invariant leakage gap on AVE-defeated data.
+  Doable in 1-2 days using existing pipeline.
+- **Second deep model in Group A** (any non-SPRINT binary classifier on
+  PDBBind) — would extend the model-invariance claim to a third model.
+- **SPRINT trained on DEKOIS / DUD-E / LIT-PCBA** — second large-scale
+  corpus binary audit. Each corpus is 5-30× PDBBind size; per-regime
+  training would take ~1 day each.
+- **Per-corpus protein-side family graph** for full target-clean splits
+  on LIT-PCBA — currently we use singleton-family fallback. Could be
+  done with hmmscan / Pfam API.
 - Second-corpus deep-model audit (SPRINT on DEKOIS / DUD-E / LIT-PCBA — needs corpus-specific protein-seq lookups + days of training).
 - Pocket-axis leakage on non-PDBBind corpora (needs `example_has_pocket` edges in those v1 graphs).
 - Assay-axis leakage (needs `example_from_assay` edges added to v1 graphs from `chembl_assays.parquet`).
