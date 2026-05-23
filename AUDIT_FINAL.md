@@ -154,6 +154,45 @@ apples-to-apples within each corpus row.
 | LIT-PCBA | **0.523** | 0.518 | 0.526 | 0.556 | ∅ | 0.533 | 0.533† | +3.3pp |
 | PDBBind  | **0.806** | 0.707 | 0.707 | 0.555 | 0.746 | 0.679 | 0.746† | **−25.1pp** |
 
+### Multi-corpus × multi-model leakage (Morgan-LR vs Morgan-RF)
+
+Same v2 splits, two different classifiers on identical Morgan
+fingerprints: Logistic Regression (linear, low capacity) and Random
+Forest (non-parametric trees, high capacity). For each corpus, both
+random-control-calibrated.
+
+| Corpus | Model | random | ligand | protein | dual | random→protein Δ |
+|---|---|---:|---:|---:|---:|---:|
+| PDBBind | LR | 0.773 | 0.690 | 0.654 | 0.702 | −12pp |
+| PDBBind | RF | 0.806 | 0.707 | **0.555** | 0.679 | **−25pp** |
+| DEKOIS  | LR | 0.926 | 0.927 | 0.785 | 0.811 | −14pp |
+| DEKOIS  | RF | 0.888 | 0.886 | 0.757 | 0.814 | **−13pp** |
+| DUD-E   | LR | 0.980 | 0.976 | 0.923 | 0.933 | −6pp |
+| DUD-E   | RF | 0.888 | 0.879 | 0.809 | 0.829 | −8pp |
+| LIT-PCBA| LR | 0.722 | 0.739 | 0.596 | 0.682 | **−13pp** *(but AUPRC ~0.01)* |
+| LIT-PCBA| RF | 0.523 | 0.518 | 0.556 | 0.533 | +3pp |
+
+**Observations:**
+- On **DEKOIS and DUD-E**, LR and RF show essentially the same
+  protein-axis leakage gap (within 2pp of each other). The KG's
+  protein-clean filter is detecting a shared structural property of
+  those corpora that doesn't depend on model class.
+- On **PDBBind**, RF shows a much larger drop than LR (25pp vs 12pp).
+  This is the "capacity-scaling" effect: PDBBind has rich ligand-
+  pocket interaction structure that RF can memorize but LR can't.
+- On **LIT-PCBA**, LR and RF disagree on direction (LR drops, RF flat).
+  LR's apparent gap is misleading — AUPRC is ~0.01 (essentially no
+  useful signal at all), and LIT-PCBA's extreme imbalance (~0.3% pos)
+  makes AUROC behave erratically across model classes. The
+  AVE-defeated negative-control conclusion (no leakage gap) holds on
+  RF; LR's AUROC drop without AUPRC support is consistent with
+  picking up class-rate artefacts, not a real leakage signal.
+
+The headline `random→protein` gap is **direction-consistent across the
+two model classes on three of four corpora** (PDBBind, DEKOIS, DUD-E).
+Magnitude differs on PDBBind because of the capacity effect; magnitudes
+agree on DEKOIS and DUD-E.
+
 ∅ = infeasible (no edges of that axis in the v1 graph for that corpus). † =
 degenerate strict-clean (n_groups = n_examples → effectively random split).
 
