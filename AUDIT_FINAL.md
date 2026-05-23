@@ -108,25 +108,45 @@ protein-clean the model still loses ~25pp relative to its own random-control
 score. The shortcut isn't a Morgan-fingerprint artefact — a fully trained
 contemporary DTI model has it too.
 
-## Multi-corpus Phase 1 baseline context
+## Multi-corpus Phase 1 baseline (with random-control calibration)
 
-| Corpus | ligand | scaffold | protein | pocket | dual | strict |
-|---|---|---|---|---|---|---|
-| DEKOIS | 0.886 | 0.850 | 0.757 | ∅ | 0.814 | 0.814† |
-| DUD-E | 0.879 | 0.876 | 0.809 | ∅ | 0.829 | 0.829† |
-| LIT-PCBA | 0.518 | 0.526 | 0.556 | ∅ | 0.533 | 0.533† |
-| PDBBind | 0.707 | 0.707 | 0.555 | 0.746 | 0.679 | 0.746† |
+Morgan-RF baseline AUROC. **The `random` column is calibrated against
+each corpus's own size-matched random partition**, so deltas are
+apples-to-apples within each corpus row.
+
+| Corpus | random | ligand | scaffold | protein | pocket | dual | strict | random→protein Δ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| DEKOIS   | **0.888** | 0.886 | 0.850 | 0.757 | ∅ | 0.814 | 0.814† | **−13.1pp** |
+| DUD-E    | **0.888** | 0.879 | 0.876 | 0.809 | ∅ | 0.829 | 0.829† | **−7.9pp** |
+| LIT-PCBA | **0.523** | 0.518 | 0.526 | 0.556 | ∅ | 0.533 | 0.533† | +3.3pp |
+| PDBBind  | **0.806** | 0.707 | 0.707 | 0.555 | 0.746 | 0.679 | 0.746† | **−25.1pp** |
 
 ∅ = infeasible (no edges of that axis in the v1 graph for that corpus). † =
 degenerate strict-clean (n_groups = n_examples → effectively random split).
-See PHASE1_FINAL_REPORT.md § Findings F1-F4.
 
-**Per-corpus shortcut profile:**
-- DEKOIS, DUD-E: heavy *ligand-axis* shortcut. Matched-property decoys insufficient.
-- LIT-PCBA AVE: shortcut defeated (every regime ≈ 0.55). AVE works as advertised.
-- PDBBind: dominant *protein-axis* shortcut. The 0.71→0.55 drop is the largest
-  single-axis effect we measure and is what Phase 2 SPRINT confirms with a
-  deep model.
+**Per-corpus shortcut profile** (now with random-control calibration):
+- **PDBBind**: dominant *protein-axis* shortcut. The −25pp drop from random
+  control to protein-clean is the largest single-axis effect in any
+  corpus and is what Phase 2 SPRINT confirms with a deep model.
+- **DEKOIS**: moderate *protein-axis* shortcut (−13pp). Smaller than
+  PDBBind but still real. DEKOIS's matched-property decoys defeat the
+  ligand-axis shortcut (random 0.888 ≈ ligand 0.886) but not the
+  protein-axis.
+- **DUD-E**: smallest *protein-axis* shortcut (−8pp). DUD-E's larger
+  cross-target decoy set spreads the ligand-axis signal more, but
+  protein-axis still leaks.
+- **LIT-PCBA AVE**: **no leakage signal anywhere**. Random control ≈ all
+  regimes ≈ 0.53 (near chance). AVE-defeated splits work as advertised:
+  there is nothing for the KG to remove. This is the proper negative
+  control for the audit framework — the framework correctly reports
+  "no leakage" on a corpus that has been adversarial-validation-pruned.
+
+The random-control row in this table was added per corpus via
+`tools/build_random_pdbbind_split.py` (corpus-agnostic) +
+`tools/run_morgan_rf_random.py --corpus <name>`. Outputs under
+`outputs/v2/phase1_full/baselines/<corpus>_random_morgan_rf.csv`.
+
+See PHASE1_FINAL_REPORT.md § Findings F1-F4 for per-step numbers.
 
 ## Group B placeholder — paper-config reproduction
 

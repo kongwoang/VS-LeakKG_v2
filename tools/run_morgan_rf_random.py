@@ -27,6 +27,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--split", required=True, type=Path)
     p.add_argument("--out", required=True, type=Path)
+    p.add_argument("--corpus", default="pdbbind",
+                   help="Corpus label for the output row (e.g. dekois, dude, litpcba, pdbbind)")
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
@@ -42,7 +44,7 @@ def main():
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     row = pl.DataFrame({
-        "corpus": ["pdbbind"],
+        "corpus": [args.corpus],
         "regime": ["random"],
         "n_train": [train.shape[0]],
         "n_test": [test.shape[0]],
