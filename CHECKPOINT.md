@@ -4,18 +4,20 @@
 
 ### Group A — PDBBind binary audit (final, shippable)
 
-| Result | Status | Number |
-|---|---|---|
-| Morgan-RF random control | done | AUROC 0.8058 |
-| Morgan-RF ligand-clean | done | AUROC 0.7070 |
-| Morgan-RF protein-clean | done | AUROC 0.5549 |
-| Morgan-RF dual-clean | done | AUROC 0.6788 |
-| SPRINT random control | done | AUROC 0.8370 |
-| SPRINT ligand-clean | done | AUROC 0.7619 |
-| SPRINT protein-clean | done | AUROC 0.5890 |
-| SPRINT dual-clean | done | AUROC 0.7306 |
+| Regime | Morgan-LR | Morgan-RF | SPRINT |
+|---|---:|---:|---:|
+| random  | 0.7727 | **0.8058** | **0.8370** |
+| ligand  | 0.6901 | 0.7070 | **0.7619** |
+| protein | 0.6537 | **0.5549** | **0.5890** |
+| dual    | 0.7016 | 0.6788 | **0.7306** |
 
-Both models drop ~25pp from random control to protein-clean. Model-invariant.
+random→protein drops:
+  Linear LR:    −11.9pp
+  Tree RF:      −25.1pp  (z≈19 sig)
+  Deep SPRINT:  −24.8pp  (z≈19 sig)
+
+Drop **direction** is model-invariant; drop **magnitude** scales with
+model capacity (high-capacity RF + SPRINT leak twice as much as linear LR).
 
 ### Group A++ — Multi-corpus random-control calibration (Morgan-RF)
 
@@ -103,6 +105,12 @@ subset-selection effect dominates the signal at n=18-35 per regime.
 
 | Commit | Content |
 |---|---|
+| 059e97f | [Group A+++] add third PDBBind model (Morgan-LR), surface capacity-vs-leakage |
+| 47c8952 | audit: refresh executive summary table with Group A++ and direction-consistency |
+| 5984873 | [Group C++] save direction-consistency tool |
+| b2c04d0 | [Group C++] add cross-method direction-consistency sign-test |
+| d4b79b7 | audit: add DUD-E AUROC cross-method table |
+| 08cb302 | audit: statistical power + SPRINT-uses-protein-but-still-leaks framing |
 | 45b0f02 | audit: per-axis leakage delta table (random→clean, all 4 corpora) |
 | ddae472 | [Group A++] multi-corpus random-control calibration for Morgan-RF baselines |
 | 07e5113 | audit doc revision: add executive summary, LIT-PCBA section, expanded reproducibility |
