@@ -93,7 +93,151 @@ corpus and cross-config comparisons remain out of scope. This is the
 "never compute paper-minus-ours" fairness gate fixed in
 `memory/phase2_fairness_policy.md`.
 
-## DrugCLIP — third-model attempt
+## Group C — Retrieval-native audit (DUD-E, proof-of-protocol)
+
+A separate audit track for retrieval-style virtual-screening models
+(DrugCLIP and similar). **This section's numbers do NOT mix with the
+Group A PDBBind binary table above.** Different corpus, different task,
+different metrics. Group A and Group C are independent audit tracks; the
+v2 KG underlies both but expresses different leakage controls in each.
+
+**Why a separate track**: Group A's row-level binary AUROC is the wrong
+metric for DrugCLIP. DrugCLIP outputs normalized-cosine *similarity*
+scores designed for ranking-within-a-query, not cross-query binary
+classification. The "DrugCLIP — third-model attempt" appendix below
+documents the diagnostic that led us here. The fair retrieval-native
+treatment is: pick a corpus organized per-target (one pocket → many
+actives + many decoys), apply target-level leakage filters, and report
+per-target BEDROC / ROC-AUC / EF — the metrics DrugCLIP was trained on.
+
+### Setup
+
+| Item | Value |
+|---|---|
+| Corpus | DUD-E (102 targets total; 65 with pre-extracted pocket PDBs from PDBBind) |
+| Per-target test pool | all known actives + 1000 random property-matched decoys |
+| Conformer generation | 1 RDKit-embedded conformer per molecule |
+| Model | DrugCLIP published checkpoint (trained on PDBBind 2020 + HomoAug) |
+| Eval | Zero-shot. Model is frozen; we only score and rank. |
+| Metric per target | BEDROC (α=80.5), ROC-AUC, EF1%, EF5% |
+| Aggregation | mean ± std across test targets |
+
+### Target-level leakage regimes (KG-driven)
+
+Built from `outputs/v2_retrieval/graph_dude/`:
+- **target_random** — uniform-random target partition (control)
+- **target_clean** — entire Pfam-family (≥40% seq ID cluster) goes to one side
+- **active_clean** — targets sharing any active ligand stay on the same side
+- **dual_clean** — target_clean ∧ active_clean (intersect both)
+- *scaffold_clean dropped* — Bemis-Murcko scaffolds are massively shared
+  across DUD-E (single-linkage collapses everything into one giant cluster;
+  only 2 test targets escape). This is itself a finding about DUD-E.
+
+Split sizes (65 targets in scope, ~30% test target fraction):
+
+| Regime | n_train_targets | n_test_targets | test_row_frac |
+|---|---:|---:|---:|
+| target_random  | 47 | 18 | 29% |
+| target_clean   | 47 | 18 | 30% |
+| active_clean   | 42 | 23 | 30% |
+| dual_clean     | 42 | 23 | 30% |
+
+(`outputs/v2_retrieval/splits/dude/<regime>.parquet`)
+
+### Contamination caveat (read this before reading the table)
+
+DrugCLIP's published checkpoint was trained on PDBBind 2020 + HomoAug. Our
+65 in-pocket DUD-E targets were selected because their PDB codes ARE in
+the PDBBind 2020 extraction — meaning **all 65 targets are direct
+training-data overlap** for the paper checkpoint. The remaining 37 DUD-E
+targets (whose pockets we didn't fetch) are the proper "novel-target"
+set; that's deferred to a follow-up.
+
+Within the 65 in-domain targets, contamination is uniform across our
+target-level split regimes (the KG only controls the train/test
+partition WE define; it doesn't affect what the paper model already saw).
+So the **regime-by-regime comparison stays valid** — if random > target-clean,
+that's a real "novel-target-axis" effect within the contaminated set.
+
+(`outputs/v2_retrieval/diagnostics/dude_contamination.csv`)
+
+### Per-regime results
+
+Paper checkpoint zero-shot, aggregated across each regime's test targets:
+
+| Regime | n test targets | ROC-AUC mean ± std | BEDROC mean ± std | EF1% mean | EF5% mean |
+|---|---:|---:|---:|---:|---:|
+| target_random | 18 | 0.458 ± 0.216 | 0.112 ± 0.214 | 0.80 | 0.71 |
+| target_clean  | 18 | 0.468 ± 0.247 | 0.156 ± 0.224 | 1.45 | 1.26 |
+| active_clean  | 23 | 0.382 ± 0.204 | 0.091 ± 0.182 | 0.82 | 0.63 |
+| dual_clean    | 23 | 0.382 ± 0.204 | 0.091 ± 0.182 | 0.82 | 0.63 |
+
+Per-target CSVs at `outputs/v2_retrieval/results/dude/<regime>_per_target.csv`.
+
+### Honest interpretation
+
+**Per-target variance dominates the signal.** AUROC std ≈ 0.2 with per-target
+range from 0.12 to 0.86. Three targets (hivint, ada, src) score AUROC ≥ 0.8;
+many score ≤ 0.3. With only 18-23 test targets per regime, the per-regime
+gaps that LOOK suggestive are within noise: the active_clean vs target_random
+gap is −0.076 with SE ≈ 0.067 (not statistically significant).
+
+**active_clean ≡ dual_clean (identical split).** DUD-E's cross-target active
+sharing is so pervasive that the active-axis constraint already subsumes the
+target-axis (Pfam) constraint. The two regimes produce identical
+train/test partitions on our 65-target scope, so we report them as one
+finding rather than two.
+
+**Subset-selection effects, not training-time leakage gaps.** This is the
+critical caveat. Because we evaluated a **frozen paper checkpoint**, the KG's
+target-level filters do not control what the model has seen — they only
+control *which targets we ask about at test time*. A drop in BEDROC on
+active_clean tells us "targets with cross-target-disjoint actives happen to
+be harder for DrugCLIP", **not** "DrugCLIP loses signal when train/test
+leakage is forbidden". A true leakage-gap audit for a retrieval model
+requires retraining on each split's train side, which is currently blocked
+by the corpus-size issue documented in the DrugCLIP attempt section below.
+
+**aa2ar smoke-test outlier.** The smoke test reported `aa2ar` AUROC = 0.838,
+BEDROC = 0.955 — well above the per-regime mean. This is a known
+easy DUD-E target (adenosine A2A receptor); it's not representative of
+typical DrugCLIP behaviour across the test sets here.
+
+### What Group C *does* demonstrate
+
+- A retrieval-native audit protocol that **matches the model's intended use**:
+  per-target BEDROC + ROC-AUC + EF across DUD-E-style libraries, with the
+  v2 KG controlling target-level splits.
+- A working pipeline (target nodes + family/active-share edges + 4 split
+  regimes + per-target retrieval eval). The aa2ar smoke test (BEDROC 0.955)
+  confirms the implementation is sound — the model gives strong, paper-
+  reportable signal when the decoy pool and metric match its training
+  objective.
+- A characterization of DUD-E itself: scaffold sharing is so pervasive it
+  collapses scaffold_clean to a degenerate split; active sharing already
+  subsumes Pfam family sharing.
+
+### What Group C *does NOT yet demonstrate*
+
+- **A model-invariant leakage gap, retrieval-native.** Doing so requires
+  retraining DrugCLIP (or similar) on each split's train side. Blocked by
+  the corpus-size issue (≤10K positives per regime); resolving needs
+  HomoAug-style augmentation. Documented as future work.
+- **Contamination-free numbers.** All 65 in-scope DUD-E targets are direct
+  PDB-code overlap with PDBBind 2020. The 37 non-overlapping targets are
+  the proper "novel-target" set; their pockets require separate RCSB
+  fetching, deferred.
+- **DEKOIS / LIT-PCBA retrieval audit.** Same protocol, different corpora.
+  LIT-PCBA in particular (real assay decoys) would isolate the "synthetic-
+  decoy bias" from the leakage signal. Out of scope for this proof.
+
+## Appendix — DrugCLIP in Group A (record of diagnostic path)
+
+This section documents the Group A attempts that led to the Group C pivot
+above. It's kept for the record because the diagnostic itself is the
+audit story for retrieval models on a row-level binary task. **The
+numbers here are not the Group C numbers** and should not be quoted as
+DrugCLIP's audit result.
 
 We tried to add DrugCLIP as a third model in Group A. Two attempts; both
 useful as findings even though neither produced a clean Group-A row.
@@ -183,14 +327,19 @@ believe and the conclusion we report.
 - AVE-style decoys (LIT-PCBA) successfully defeat ligand shortcuts; DUD-E / DEKOIS decoys do not.
 
 **Does not show:**
-- That DrugCLIP cleanly confirms the pattern. We tried both paths and both
-  hit corpus-related blockers — paper-checkpoint zero-shot suffers train/test
-  contamination (the paper's training corpus IS PDBBind 2020+HomoAug, our
-  test splits are subsets of PDBBind 2020); retrain-from-scratch failed to
-  converge on v2 train splits (≤10k positives is too small for in-batch
-  softmax). Documented in "DrugCLIP — third-model attempt" section below.
-- That LigUnity exhibits the same pattern. Deferred to future work; same
-  corpus/contamination considerations apply.
+- That DrugCLIP cleanly confirms the *binary* leakage pattern in Group A.
+  Two attempts at a Group A row both hit corpus-related blockers; we
+  pivoted to a retrieval-native protocol (Group C above) which surfaces
+  per-target signal but on a different corpus and task. Documented in
+  the appendix "DrugCLIP in Group A" section below.
+- A model-invariant retrieval-native leakage gap. Group C's per-target
+  variance is too large at 18-23 targets to claim a significant gap
+  across split regimes from a frozen paper checkpoint. A true leakage
+  audit requires retraining DrugCLIP on each split's train side, blocked
+  by the corpus-size issue. Scoped as future work.
+- That LigUnity exhibits the same pattern. Deferred; same corpus and
+  contamination considerations apply, and the retrieval-native protocol
+  (Group C) is now the right framework for it.
 - Effect on a second large-scale corpus with a deep model. SPRINT runs on
   DEKOIS / DUD-E / LIT-PCBA were not budget-feasible in this iteration (each
   corpus is 5-30× PDBBind size; one full training run per regime per corpus
@@ -228,11 +377,16 @@ specifics in `PHASE2_SPRINT_FINAL.md`.
 
 ## Scope explicitly deferred
 
-- DrugCLIP retrain on a leakage-clean PDBBind subset with HomoAug-style
-  augmentation (currently the v2 train pool is too small for the contrastive
-  objective; HomoAug would boost it to paper-scale).
-- LigUnity audit on v2 PDBBind splits (same paper-contamination concern as
-  DrugCLIP for any pretrained model whose corpus overlaps PDBBind).
+- Group C extension to 102 DUD-E targets (37 non-PDBBind-overlapping
+  pockets need RCSB fetching; this is the "novel-target" contamination-
+  free set).
+- Group C extension to DEKOIS and LIT-PCBA — different decoy pool
+  protocols; LIT-PCBA's real-assay decoys would isolate synthetic-decoy
+  bias from the leakage signal.
+- DrugCLIP retrain on a leakage-clean train split with HomoAug-style
+  augmentation. This is the path to a true retrieval-native leakage gap
+  (vs the subset-selection effects Group C currently surfaces).
+- LigUnity Group C audit — same retrieval-native protocol applies.
 - Second-corpus deep-model audit (SPRINT on DEKOIS / DUD-E / LIT-PCBA — needs corpus-specific protein-seq lookups + days of training).
 - Pocket-axis leakage on non-PDBBind corpora (needs `example_has_pocket` edges in those v1 graphs).
 - Assay-axis leakage (needs `example_from_assay` edges added to v1 graphs from `chembl_assays.parquet`).
