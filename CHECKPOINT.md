@@ -1,4 +1,4 @@
-# Resume checkpoint — 2026-05-24 03:35 NZST
+# Resume checkpoint — 2026-05-24 06:50 NZST (final audit state)
 
 ## Where things stand
 
@@ -19,18 +19,29 @@ random→protein drops:
 Drop **direction** is model-invariant; drop **magnitude** scales with
 model capacity (high-capacity RF + SPRINT leak twice as much as linear LR).
 
-### Group A++ — Multi-corpus random-control calibration (Morgan-RF)
+### Group A++ — Multi-corpus × multi-model leakage (LR vs RF; SPRINT on PDBBind)
 
-| Corpus | random | protein | random→protein Δ |
-|---|---:|---:|---:|
-| PDBBind  | 0.806 | 0.555 | **−25.1pp** |
-| DEKOIS   | 0.888 | 0.757 | **−13.1pp** |
-| DUD-E    | 0.888 | 0.809 | **−7.9pp** |
-| LIT-PCBA | 0.523 | 0.556 | +3.3pp (no leakage; AVE works) |
+| Corpus  | Model | random | protein | random→protein Δ |
+|---|---|---:|---:|---:|
+| PDBBind | LR     | 0.773 | 0.654 | −12pp |
+| PDBBind | RF     | 0.806 | 0.555 | **−25pp** |
+| PDBBind | SPRINT | 0.837 | 0.589 | **−25pp** |
+| DEKOIS  | LR     | 0.926 | 0.785 | −14pp |
+| DEKOIS  | RF     | 0.888 | 0.757 | −13pp |
+| DUD-E   | LR     | 0.980 | 0.923 | −6pp |
+| DUD-E   | RF     | 0.888 | 0.809 | −8pp |
+| LIT-PCBA| LR     | 0.722 | 0.596 | −13pp* (AUPRC ~0.01) |
+| LIT-PCBA| RF     | 0.523 | 0.556 | +3pp (no leakage; AVE works) |
 
-Per-axis Δ table in AUDIT_FINAL.md. PDBBind has the largest leakage signal;
-LIT-PCBA is the negative-control case demonstrating the framework correctly
-reports "no leakage" on adversarial-validation-pruned data.
+Direction-consistency: PDBBind/DEKOIS/DUD-E all show LR & RF drop on
+protein-clean. LIT-PCBA's LR/RF disagreement is documented as a class-rate
+artefact (extreme imbalance ~0.3% positive); the negative-control
+conclusion holds on RF.
+
+The PDBBind capacity-scaling effect (LR=−12pp vs RF=−25pp) suggests that
+PDBBind has rich ligand-pocket memorization potential that RF can
+exploit but LR can't. DEKOIS/DUD-E show LR ≈ RF — the leakage on those
+corpora is more about target subset composition than per-pair memorization.
 
 ### Group C — Retrieval-native audit (two corpora)
 
@@ -105,6 +116,8 @@ subset-selection effect dominates the signal at n=18-35 per regime.
 
 | Commit | Content |
 |---|---|
+| fb63794 | [Group A+++] complete multi-corpus × multi-model leakage table (LR vs RF) |
+| 0f3c75a | audit: refresh executive summary to reflect 3-model Group A |
 | 059e97f | [Group A+++] add third PDBBind model (Morgan-LR), surface capacity-vs-leakage |
 | 47c8952 | audit: refresh executive summary table with Group A++ and direction-consistency |
 | 5984873 | [Group C++] save direction-consistency tool |
