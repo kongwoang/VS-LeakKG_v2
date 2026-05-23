@@ -28,9 +28,11 @@ test changes measurably) — is on **PDBBind binary classification**:
 
 | Group | Corpus | Task | What the KG controls | Result |
 |---|---|---|---|---|
-| **A** | PDBBind (19k rows) | Binary classification | Train/test partition + which axis (ligand / protein / scaffold / pocket / dual / strict) leaks | **−25pp AUROC** from random→protein-clean, consistent across Morgan-RF and SPRINT |
-| **C** | DUD-E (102 targets) + DEKOIS 2.0 (62) + LIT-PCBA (15) | Retrieval (per-target BEDROC) | Which test targets appear (target-axis Pfam-disjoint, active-axis ligand-disjoint, scaffold-axis disjoint) | KG splits structurally segregate test targets, but a frozen paper checkpoint + small n yields **subset-selection effects, not training-time leakage gaps** — confirmed across 26 methods (cross-method audit via LigUnity's published benchmark) |
-| Appendix | PDBBind | Binary classification (DrugCLIP retrofit) | Row-level split, but retrieval-model metric mismatch | Diagnostic: pool-composition is the dominant issue, not contamination. Motivated the Group C pivot. |
+| **A** | PDBBind (19k rows) | Binary classification (Morgan-RF + SPRINT) | Train/test partition + which axis (ligand / protein / scaffold / pocket / dual / strict) leaks | **−25pp AUROC** from random→protein-clean, model-invariant across shallow + deep; z ≈ 19, p ≪ 1e-30 |
+| **A++** | DEKOIS / DUD-E / LIT-PCBA | Binary classification (Morgan-RF) | Same axes, random-control calibrated per corpus | DEKOIS −13pp, DUD-E −8pp on protein-clean; LIT-PCBA flat (AVE works — negative control) |
+| **C** | DUD-E (102 targets) + DEKOIS (62) + LIT-PCBA (15) | Retrieval (per-target BEDROC, our DrugCLIP eval) | Target-level KG splits (target / active / scaffold / dual axes) | Per-target variance dominates; frozen-checkpoint zero-shot surfaces subset-selection not training-time leakage gaps |
+| **C++** | Same corpora, **26 methods** via LigUnity's published benchmark | Same retrieval task, paper-comparable per-target metrics | Apply v2 KG splits as filter; cross-method sign-test | **21/26 DUD-E methods drop on target_clean (sign-test p=0.0025)** — cross-method direction-consistency confirms KG filter is doing real structural work |
+| Appendix | PDBBind | DrugCLIP retrofit (row-level binary) | Row-level split, retrieval-model metric mismatch | Diagnostic: pool-composition is the dominant issue, not contamination. Motivated the Group C pivot. |
 
 **What's shippable on this audit:** the Group A finding is the audit's
 primary contribution and is fully defensible — 25pp drop, model-invariant,
