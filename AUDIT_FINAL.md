@@ -446,6 +446,26 @@ This is the cleanest cross-method audit we can run on retrieval models.
 
 (Full 26-method table in `outputs/v2_retrieval/results/dude_cross_method/dude_BEDROC_per_regime.csv`)
 
+#### DUD-E — ROC-AUC version of the same table (for comparison to Group A AUROC scale)
+
+| Method | random (n=22) | target_clean (n=31) | active_clean (n=35) | dual_clean (n=35) | Δ(dual−random) |
+|---|---:|---:|---:|---:|---:|
+| LigUnity        | 0.953 | 0.910 | 0.922 | 0.922 | −0.03 |
+| LigUnity (seq)  | 0.910 | 0.860 | 0.884 | 0.884 | −0.03 |
+| Pocket-DTA      | 0.903 | 0.834 | 0.810 | 0.810 | −0.09 |
+| Sequence-DTA    | 0.862 | 0.802 | 0.792 | 0.792 | −0.07 |
+| RTMScore        | 0.842 | 0.815 | 0.826 | 0.826 | −0.02 |
+| Denvis-G        | 0.830 | 0.839 | 0.852 | 0.852 | +0.02 |
+| GenScore        | 0.828 | 0.797 | 0.809 | 0.809 | −0.02 |
+| DrugCLIP        | 0.805 | 0.775 | 0.845 | 0.845 | +0.04 |
+| Vina            | 0.696 | 0.708 | 0.696 | 0.696 |  0.00 |
+
+ROC-AUC is in the 0.7-0.95 range across methods (vs. the 0.17-0.83 BEDROC
+range), and per-method deltas are correspondingly compressed. The
+direction-consistency conclusion holds — no method shows a uniformly
+large drop across regimes — and the same n vs. effect-size constraint
+applies.
+
 ### DEKOIS — BEDROC by method × regime, with random→dual delta
 
 | Method | random (n=18) | target_clean (n=18) | active_clean (n=18) | scaffold_clean (n=15) | dual_clean (n=22) | Δ(dual−random) |
