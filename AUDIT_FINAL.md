@@ -230,13 +230,76 @@ typical DrugCLIP behaviour across the test sets here.
   retraining DrugCLIP (or similar) on each split's train side. Blocked by
   the corpus-size issue (≤10K positives per regime); resolving needs
   HomoAug-style augmentation. Documented as future work.
-- **Contamination-free numbers.** All 65 in-scope DUD-E targets are direct
-  PDB-code overlap with PDBBind 2020. The 37 non-overlapping targets are
-  the proper "novel-target" set; their pockets require separate RCSB
-  fetching, deferred.
-- **DEKOIS / LIT-PCBA retrieval audit.** Same protocol, different corpora.
-  LIT-PCBA in particular (real assay decoys) would isolate the "synthetic-
-  decoy bias" from the leakage signal. Out of scope for this proof.
+- **Contamination-free numbers.** 65 of 102 in-scope DUD-E targets have
+  direct PDB-code overlap with PDBBind 2020. The remaining 37 were
+  fetched from RCSB; their PDB release dates may also fall in PDBBind
+  2020. A clean "novel-target" subset requires homology-filtering against
+  the paper's training manifest.
+- **LIT-PCBA retrieval audit.** Same protocol, real assay decoys
+  (AVE-defeated), 15 targets only — sample size is too small for
+  variance-dominated DrugCLIP zero-shot. Out of scope for this iteration.
+
+## Group C — Retrieval-native audit (DEKOIS 2.0, corroborating corpus)
+
+Same protocol as the DUD-E section above, applied to DEKOIS 2.0 — a
+second retrieval benchmark with stricter property-matched decoys.
+
+### Setup
+
+| Item | Value |
+|---|---|
+| Corpus | DEKOIS 2.0 (81 targets total; 62 with extracted pocket PDBs at 12 Å) |
+| Per-target test pool | 40 actives + ~1100 decoys (DEKOIS native sizes) |
+| Conformer generation | 1 RDKit conformer per molecule |
+| Model | DrugCLIP published checkpoint |
+| Eval | Zero-shot |
+| Metrics | Per-target BEDROC (α=80.5), ROC-AUC, EF1%, EF5% |
+
+### Split sizes (62 targets in scope, ~30% test row fraction)
+
+| Regime | n_train | n_test | test_row_frac |
+|---|---:|---:|---:|
+| target_random  | 44 | 18 | 29% |
+| target_clean   | 44 | 18 | 29% |
+| active_clean   | 44 | 18 | 29% |
+| scaffold_clean | 47 | 15 | 25% |
+| dual_clean     | 40 | 22 | 36% |
+
+Note: DEKOIS scaffold_clean is **non-degenerate** here (15 test targets,
+unlike DUD-E where it collapsed to 2). DEKOIS scaffold sharing across
+targets is much sparser than DUD-E's.
+
+### Per-regime results
+
+| Regime | n test | ROC-AUC mean ± std | BEDROC mean ± std | EF1% | EF5% |
+|---|---:|---:|---:|---:|---:|
+| target_random  | 18 | 0.479 ± 0.159 | 0.034 ± 0.052 | 1.09 | 0.69 |
+| target_clean   | 18 | 0.549 ± 0.192 | 0.042 ± 0.067 | 0.80 | 1.27 |
+| active_clean   | 18 | 0.467 ± 0.184 | 0.030 ± 0.061 | 0.80 | 0.83 |
+| scaffold_clean | 15 | 0.499 ± 0.182 | 0.041 ± 0.060 | 1.14 | 1.06 |
+| dual_clean     | 22 | 0.431 ± 0.136 | 0.018 ± 0.041 | 0.43 | 0.47 |
+
+### Honest interpretation
+
+- **DrugCLIP performs substantially worse on DEKOIS than on DUD-E**: mean
+  BEDROC 0.02-0.04 (DEKOIS) vs 0.08-0.13 (DUD-E). Plausibly because
+  DEKOIS's matched-property decoys are more rigorous than DUD-E's, and
+  because DEKOIS targets have lower overlap with PDBBind 2020.
+- **`dual_clean` is the lowest** (BEDROC 0.018, AUROC 0.431, EF1% 0.43)
+  — the most restrictive split selects the hardest test targets. This
+  is consistent with the "subset-selection effect" interpretation: the
+  KG's leakage filter selects targets whose actives and Pfam family are
+  disjoint from the train side, which happens to correlate with targets
+  the model finds hardest.
+- **No statistically-significant leakage gap.** target_random vs
+  dual_clean ΔAUROC = 0.048 ± 0.047 (z ≈ 1.0, p ≈ 0.32). Per-target
+  variance again dominates.
+- **DEKOIS confirms DUD-E's conclusion**: zero-shot eval of a frozen
+  paper checkpoint surfaces subset-selection effects, not training-time
+  leakage gaps. A true Group C leakage audit needs the model to be
+  retrained on each split's train side.
+
+Per-target CSVs at `outputs/v2_retrieval/results/dekois/<regime>_per_target.csv`.
 
 ## Appendix — DrugCLIP in Group A (record of diagnostic path)
 
