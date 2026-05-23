@@ -129,20 +129,30 @@ mols and AUROC against the 1-positive / (N−1)-negative ranking.
 
 | Regime | n test pockets w/ binder | mean per-pocket AUROC | median |
 |---|---:|---:|---:|
+| random (control) | 3,322 | **0.554** | 0.566 |
 | ligand-clean | 1,640 | 0.560 | 0.563 |
 | protein-clean | 2,158 | 0.561 | 0.591 |
 | dual-clean | 2,516 | 0.574 | 0.596 |
-| random (control) | TBD | TBD | TBD |
 
-The published model is essentially flat across leakage regimes. We read
-this as **train-test contamination dominating the signal**: the published
-checkpoint has seen each of our v2 test splits during its own training
-(no protein, ligand, or dual partition of PDBBind is "novel" relative to
-its training data), so the v2 leakage filter does not separate it from
-in-domain performance. A clean Group A audit of DrugCLIP would require
-either (a) retraining from scratch on a single v2 train split (Attempt 1
-shows this needs a HomoAug-equivalent augmentation we did not implement),
-or (b) recovering the paper's training manifest and excluding overlap.
+The published model is **essentially flat across all four regimes** (mean
+per-pocket AUROC = 0.554-0.574, a 2pp spread). Critically, the random
+control row is **the same as the leakage-clean rows**. Compare to
+Morgan-RF (random 0.81, protein 0.55, 25pp gap) and SPRINT (random 0.84,
+protein 0.59, 25pp gap) on the same test data.
+
+We read this as **train-test contamination dominating the signal**: the
+published checkpoint has seen each of our v2 test splits during its own
+training (no protein, ligand, dual, or randomly-sampled partition of
+PDBBind is "novel" relative to its training data), so the v2 leakage
+filter does not separate it from in-domain performance. The absent
+leakage gap is itself the diagnostic — it tells us the published model
+cannot be cleanly audited on PDBBind-derived splits, *not* that
+DrugCLIP is leakage-resistant.
+
+A clean Group A audit of DrugCLIP would require either (a) retraining
+from scratch on a single v2 train split (Attempt 1 shows this needs a
+HomoAug-equivalent augmentation we did not implement), or (b) recovering
+the paper's training manifest and excluding overlap.
 
 We also report the *flat per-row AUROC* for direct comparison to
 Morgan-RF / SPRINT, with the caveat that DrugCLIP's normalized dot product
@@ -151,10 +161,10 @@ is a **similarity** score, not a calibrated probability — flat AUROC across
 
 | Regime | DrugCLIP flat AUROC | (vs SPRINT) |
 |---|---:|---:|
+| random | 0.480 | 0.837 |
 | ligand-clean | 0.482 | 0.762 |
 | protein-clean | 0.490 | 0.589 |
 | dual-clean | 0.505 | 0.731 |
-| random | TBD | 0.837 |
 
 The flat number being ≈0.5 for all regimes is *expected*: DrugCLIP's
 embedding norms vary per-pocket, and cross-pocket score comparison is
