@@ -108,6 +108,28 @@ protein-clean the model still loses ~25pp relative to its own random-control
 score. The shortcut isn't a Morgan-fingerprint artefact — a fully trained
 contemporary DTI model has it too.
 
+**Statistical power.** PDBBind's test sets carry 4-5K examples per regime
+with both classes well-represented (38-60% positive rate). The standard
+error on each AUROC point estimate is ≈0.01; the SE on the random→protein
+delta of 0.251 (Morgan-RF) is ≈0.013, giving z ≈ 19 (p ≪ 1e-30). The same
+delta on SPRINT (0.248) is similarly hyper-significant. Group A is not a
+small-n story — the leakage gap is detected with overwhelming confidence
+in both models.
+
+**A subtle but load-bearing finding.** SPRINT is a *protein-aware* model:
+it consumes ProtBert sequence embeddings of the target protein in addition
+to Morgan ligand features. If SPRINT were actually generalizing across
+protein space — learning what makes a protein "binder-shaped" rather than
+memorizing specific (ligand, protein) pairs — it should *outperform*
+Morgan-RF on protein-clean by a wide margin, because the protein-axis is
+where the protein-side information would help. Instead, SPRINT
+underperforms Morgan-RF's random-control by 25pp in exactly the same way
+Morgan-RF underperforms its own random — i.e., the protein input
+isn't generalizing, the model is using it to memorize protein-specific
+ligand patterns. This is the cleanest single-piece evidence that v2's
+protein-clean is detecting **real generalization failure**, not a
+sampling artefact.
+
 ## Multi-corpus Phase 1 baseline (with random-control calibration)
 
 Morgan-RF baseline AUROC. **The `random` column is calibrated against
