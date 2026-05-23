@@ -17,6 +17,19 @@
 
 Both models drop ~25pp from random control to protein-clean. Model-invariant.
 
+### Group A++ — Multi-corpus random-control calibration (Morgan-RF)
+
+| Corpus | random | protein | random→protein Δ |
+|---|---:|---:|---:|
+| PDBBind  | 0.806 | 0.555 | **−25.1pp** |
+| DEKOIS   | 0.888 | 0.757 | **−13.1pp** |
+| DUD-E    | 0.888 | 0.809 | **−7.9pp** |
+| LIT-PCBA | 0.523 | 0.556 | +3.3pp (no leakage; AVE works) |
+
+Per-axis Δ table in AUDIT_FINAL.md. PDBBind has the largest leakage signal;
+LIT-PCBA is the negative-control case demonstrating the framework correctly
+reports "no leakage" on adversarial-validation-pruned data.
+
 ### Group C — Retrieval-native audit (two corpora)
 
 #### DUD-E (102 targets in scope, 65 PDBBind-overlap + 37 RCSB-fetched)
@@ -90,6 +103,10 @@ subset-selection effect dominates the signal at n=18-35 per regime.
 
 | Commit | Content |
 |---|---|
+| 45b0f02 | audit: per-axis leakage delta table (random→clean, all 4 corpora) |
+| ddae472 | [Group A++] multi-corpus random-control calibration for Morgan-RF baselines |
+| 07e5113 | audit doc revision: add executive summary, LIT-PCBA section, expanded reproducibility |
+| b8f6daa | [Group C++] LIT-PCBA target KG + cross-method analysis |
 | 3c0fa66 | [Group C++] cross-method audit: 26 methods × KG splits via LigUnity's published benchmark |
 | ee0ddac | [Group C] DEKOIS 2.0 retrieval audit — second corroborating corpus |
 | 3a60d04 | [Group C+] scale DUD-E retrieval audit to all 102 targets |
