@@ -114,7 +114,7 @@ per-target BEDROC / ROC-AUC / EF — the metrics DrugCLIP was trained on.
 
 | Item | Value |
 |---|---|
-| Corpus | DUD-E (102 targets total; 65 with pre-extracted pocket PDBs from PDBBind) |
+| Corpus | DUD-E (102 targets — 65 from PDBBind 2020 pockets, 37 fetched from RCSB) |
 | Per-target test pool | all known actives + 1000 random property-matched decoys |
 | Conformer generation | 1 RDKit-embedded conformer per molecule |
 | Model | DrugCLIP published checkpoint (trained on PDBBind 2020 + HomoAug) |
@@ -133,31 +133,32 @@ Built from `outputs/v2_retrieval/graph_dude/`:
   across DUD-E (single-linkage collapses everything into one giant cluster;
   only 2 test targets escape). This is itself a finding about DUD-E.
 
-Split sizes (65 targets in scope, ~30% test target fraction):
+Split sizes (102 targets in scope, ~30% test fraction by row-weight):
 
 | Regime | n_train_targets | n_test_targets | test_row_frac |
 |---|---:|---:|---:|
-| target_random  | 47 | 18 | 29% |
-| target_clean   | 47 | 18 | 30% |
-| active_clean   | 42 | 23 | 30% |
-| dual_clean     | 42 | 23 | 30% |
+| target_random  | 80 | 22 | 30% |
+| target_clean   | 71 | 31 | 30% |
+| active_clean   | 67 | 35 | 23% |
+| dual_clean     | 67 | 35 | 23% |
 
 (`outputs/v2_retrieval/splits/dude/<regime>.parquet`)
 
 ### Contamination caveat (read this before reading the table)
 
-DrugCLIP's published checkpoint was trained on PDBBind 2020 + HomoAug. Our
-65 in-pocket DUD-E targets were selected because their PDB codes ARE in
-the PDBBind 2020 extraction — meaning **all 65 targets are direct
-training-data overlap** for the paper checkpoint. The remaining 37 DUD-E
-targets (whose pockets we didn't fetch) are the proper "novel-target"
-set; that's deferred to a follow-up.
+DrugCLIP's published checkpoint was trained on PDBBind 2020 + HomoAug.
+65 of our 102 DUD-E targets have direct PDB-code overlap with PDBBind
+2020 (we used PDBBind's pre-extracted pockets for those). The other 37
+were fetched from RCSB and may still overlap PDBBind 2020 if their PDB
+release dates fall in that window. HomoAug additionally exposes
+homologs; we did not implement a homology-filter pass against PDBBind.
 
-Within the 65 in-domain targets, contamination is uniform across our
-target-level split regimes (the KG only controls the train/test
-partition WE define; it doesn't affect what the paper model already saw).
-So the **regime-by-regime comparison stays valid** — if random > target-clean,
-that's a real "novel-target-axis" effect within the contaminated set.
+Within the 102 targets, contamination is approximately uniform across
+our target-level split regimes (the KG only controls the train/test
+partition WE define; it doesn't affect what the paper model already
+saw). So the **regime-by-regime comparison stays valid** — if random >
+target-clean, that's a real "novel-target-axis" effect within whatever
+in-domain set we have.
 
 (`outputs/v2_retrieval/diagnostics/dude_contamination.csv`)
 
@@ -167,26 +168,32 @@ Paper checkpoint zero-shot, aggregated across each regime's test targets:
 
 | Regime | n test targets | ROC-AUC mean ± std | BEDROC mean ± std | EF1% mean | EF5% mean |
 |---|---:|---:|---:|---:|---:|
-| target_random | 18 | 0.458 ± 0.216 | 0.112 ± 0.214 | 0.80 | 0.71 |
-| target_clean  | 18 | 0.468 ± 0.247 | 0.156 ± 0.224 | 1.45 | 1.26 |
-| active_clean  | 23 | 0.382 ± 0.204 | 0.091 ± 0.182 | 0.82 | 0.63 |
-| dual_clean    | 23 | 0.382 ± 0.204 | 0.091 ± 0.182 | 0.82 | 0.63 |
+| target_random | 22 | 0.450 ± 0.189 | 0.132 ± 0.195 | 0.98 | 0.73 |
+| target_clean  | 31 | 0.468 ± 0.174 | 0.103 ± 0.153 | 0.74 | 0.74 |
+| active_clean  | 35 | 0.454 ± 0.226 | 0.075 ± 0.129 | 0.96 | 0.88 |
+| dual_clean    | 35 | 0.454 ± 0.226 | 0.075 ± 0.129 | 0.96 | 0.88 |
 
 Per-target CSVs at `outputs/v2_retrieval/results/dude/<regime>_per_target.csv`.
 
 ### Honest interpretation
 
-**Per-target variance dominates the signal.** AUROC std ≈ 0.2 with per-target
-range from 0.12 to 0.86. Three targets (hivint, ada, src) score AUROC ≥ 0.8;
-many score ≤ 0.3. With only 18-23 test targets per regime, the per-regime
-gaps that LOOK suggestive are within noise: the active_clean vs target_random
-gap is −0.076 with SE ≈ 0.067 (not statistically significant).
+**Per-target variance dominates the signal.** AUROC std ≈ 0.19–0.23 with
+per-target range from 0.04 to 0.86. A few targets (hivint, ada, src) score
+AUROC ≥ 0.8; many score ≤ 0.3. Even with 102 targets (22–35 per regime),
+the per-regime gaps that LOOK suggestive are within noise:
+
+- AUROC: `target_random` (0.450) vs `active_clean` (0.454) — effectively flat.
+- BEDROC: `target_random` (0.132) vs `active_clean` (0.075) — gap = 0.057
+  with SE ≈ 0.047, z ≈ 1.2, p ≈ 0.23. Not significant.
+
+The BEDROC ordering `random ≥ target_clean > active_clean` is the direction
+you'd expect from a real leakage gap, but the sample size + per-target
+variance combination doesn't let us claim it.
 
 **active_clean ≡ dual_clean (identical split).** DUD-E's cross-target active
 sharing is so pervasive that the active-axis constraint already subsumes the
 target-axis (Pfam) constraint. The two regimes produce identical
-train/test partitions on our 65-target scope, so we report them as one
-finding rather than two.
+train/test partitions, so we report them as one finding rather than two.
 
 **Subset-selection effects, not training-time leakage gaps.** This is the
 critical caveat. Because we evaluated a **frozen paper checkpoint**, the KG's
