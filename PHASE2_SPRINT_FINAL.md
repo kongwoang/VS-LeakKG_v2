@@ -83,18 +83,53 @@ only a small further drop.
 
 ## Fairness statement
 
-This table is **Group A** under our framework:
-- Same model (SPRINT ultrafast).
-- Same config (`agg_config.yml`, unmodified).
-- Same featurizers (Morgan + ProtBert).
-- Same v2 graph and same v2 split-construction code.
-- Only the *leakage regime* varies.
+### What we claim
 
-This table is **not** compared to any paper number. SPRINT's published evaluation
-is on DAVIS/BIOSNAP, not PDBBind. Cross-corpus or cross-config deltas are out of
-scope for this audit. Group B (DAVIS paper-split reproduction with the same
-config, to sanity-check our env) is queued and not strictly required for the
-audit claim above.
+This table is **Group A** under our fairness framework. The comparison unit
+across rows is:
+
+| held fixed across rows | value |
+|---|---|
+| corpus | PDBBind v2 (all 19,037 examples, same graph) |
+| model | SPRINT (ultrafast) dual-tower, ConPLex-style aggregation |
+| config | `configs/agg_config.yml`, *unmodified* (used as published) |
+| featurizers | MorganFeaturizer (drug) + ProtBertFeaturizer (target) |
+| preprocessing | identical CSV emit (`tools/v2_to_sprint_csv.py`) + same protein-seq lookup |
+| epochs / lr / batch / seed | all per agg_config.yml (250 / 1e-5 / 24 / 1) |
+| **varies only** | the v2 split regime (ligand-clean / protein-clean / dual-clean) |
+
+The audit claim is precisely: *when only the split regime varies (everything
+else above held constant), held-out AUROC drops from 0.7619 (ligand-clean) to
+0.5890 (protein-clean) — a 17.3 pp drop attributable to removing
+protein-axis leakage between train and test*. Nothing more.
+
+### What we explicitly do NOT claim
+
+- **Not SPRINT-paper reproduction.** The published SPRINT virtual-screening
+  setup trains on MERGED (BindingDB + BIOSNAP + DAVIS + ...) and evaluates
+  zero-shot on LIT-PCBA. That's a different corpus *and* a different task
+  (zero-shot vs. in-distribution). We do not run that experiment and we do not
+  subtract our PDBBind numbers from their LIT-PCBA numbers. Cross-corpus +
+  cross-task deltas would conflate the audit signal with confounders.
+- **Not "SPRINT is worse than reported."** A 0.59 AUROC on protein-clean
+  PDBBind says nothing about SPRINT's reported MERGED → LIT-PCBA performance.
+  Different corpus, different task.
+- **Not a generalization claim about ConPLex / dual-tower architectures.** We
+  use SPRINT *as* a fixed architecture/featurizer/config combo so the only
+  moving variable is the split. The result is "this specific model exhibits a
+  protein-axis shortcut on this specific corpus when leakage is removed,"
+  matching the same shortcut Morgan-RF exhibits.
+
+### Group B (deferred)
+
+A SPRINT paper-config reproduction (train MERGED, test LIT-PCBA, or train
+DAVIS, test DAVIS-paper-split) is what would let us sanity-check that our
+training pipeline is faithful. It is **not** required for the audit claim
+above, because that claim is purely internal to Group A. Documented as
+deferred future work.
+
+This fairness gate is also encoded in `memory/phase2_fairness_policy.md` and
+in the cross-cutting `AUDIT_FINAL.md` § Group B placeholder.
 
 ## Reproducibility
 

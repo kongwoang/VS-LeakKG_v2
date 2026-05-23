@@ -30,9 +30,22 @@ AUROC; AUPR is in the per-phase reports.
 
 | Regime | n_train | n_test | Morgan-RF AUROC (Phase 1) | SPRINT AUROC (Phase 2) | Δ (model) |
 |---|---:|---:|---:|---:|---:|
+| **random (control)** | 7,337 | 5,844 | **0.8058** | (training) | — |
 | ligand-clean  | 9,917 | 4,560 | 0.7070 | **0.7619** | +0.055 |
 | protein-clean | 7,337 | 5,844 | **0.5549** | **0.5890** | +0.034 |
 | dual-clean    | 8,192 | 5,429 | 0.6788 | **0.7306** | +0.052 |
+
+The **random row is a control**: same 19,037 PDBBind examples and same
+train/val/test sizes as protein-clean, but the partition assignment is
+uniform-random instead of leakage-axis-clean. It keeps every form of leakage
+(ligand-axis, protein-axis, scaffold, structural similarity). If the v2 KG
+framework were doing no real work, random and protein-clean would score the
+same. They don't — random scores **+25pp** higher AUROC than protein-clean.
+That 25pp gap is the leakage signal the KG is *removing* on protein-clean.
+Same logic: ligand-clean drops 10pp from random; dual-clean drops 13pp. The
+SPRINT random control is currently training on GPU 2; result will fill in
+when it lands. The Morgan-RF random control row was added by
+`tools/build_random_pdbbind_split.py` + `tools/run_morgan_rf_random.py`.
 
 Within each model column (Group A row-set):
 
