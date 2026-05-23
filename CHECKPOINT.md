@@ -38,7 +38,7 @@ Both models drop ~25pp from random control to protein-clean. Model-invariant.
 | scaffold_clean | 15 | 0.499 ± 0.182 | 0.041 ± 0.060 |
 | dual_clean     | 22 | 0.431 ± 0.136 | 0.018 ± 0.041 |
 
-Findings (both corpora):
+Findings (both corpora, our DrugCLIP-only eval):
 - DEKOIS BEDROC much lower than DUD-E (0.02-0.04 vs 0.08-0.13) — stricter
   property-matched decoys + lower DEKOIS/PDBBind overlap
 - dual_clean is lowest in both — most restrictive split selects hardest
@@ -51,6 +51,26 @@ Findings (both corpora):
 - Honest interpretation: SUBSET-SELECTION effects, not training-time
   leakage gap (frozen paper ckpt doesn't see split filtering). Same
   conclusion holds across both retrieval corpora.
+
+### Group C++ — Cross-method via LigUnity's published benchmark
+
+Apply v2 KG splits as a filter over LigUnity's published per-target
+BEDROC/AUROC/EF1 for 26 DUD-E methods + 18 DEKOIS methods. Each method
+evaluated under its native protocol; KG splits just slice the test set.
+
+Headline BEDROC random→dual deltas:
+
+| Method | DUD-E Δ | DEKOIS Δ |
+|---|---:|---:|
+| LigUnity        | −0.02 | +0.08 |
+| LigUnity (seq)  | −0.06 | −0.03 |
+| Pocket-DTA      | **−0.22** | +0.04 |
+| RTMScore        | −0.01 | +0.19 |
+| DrugCLIP        | +0.05 | +0.10 |
+| Sequence-DTA    | **−0.12** | −0.01 |
+
+No method shows a consistent direction across both corpora. The
+subset-selection effect dominates the signal at n=18-35 per regime.
 
 ## Deferred (in priority order)
 
@@ -70,6 +90,7 @@ Findings (both corpora):
 
 | Commit | Content |
 |---|---|
+| 3c0fa66 | [Group C++] cross-method audit: 26 methods × KG splits via LigUnity's published benchmark |
 | ee0ddac | [Group C] DEKOIS 2.0 retrieval audit — second corroborating corpus |
 | 3a60d04 | [Group C+] scale DUD-E retrieval audit to all 102 targets |
 | d77d843 | [Group C+] fetch_missing_dude_pockets.py — RCSB download + pocket extraction |
