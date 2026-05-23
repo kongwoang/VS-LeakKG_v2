@@ -17,41 +17,49 @@
 
 Both models drop ~25pp from random control to protein-clean. Model-invariant.
 
-### Group C — DUD-E retrieval-native audit (proof-of-protocol complete)
+### Group C — DUD-E retrieval-native audit (all 102 targets)
 
-Paper-checkpoint zero-shot, 65/102 DUD-E targets (PDBBind-overlapping):
+Paper-checkpoint zero-shot. Pockets: 65 from PDBBind 2020 + 37 fetched
+from RCSB. All 102 targets in scope.
 
 | Regime | n_test | AUROC mean ± std | BEDROC mean ± std |
 |---|---:|---:|---:|
-| target_random | 18 | 0.458 ± 0.216 | 0.112 ± 0.214 |
-| target_clean  | 18 | 0.468 ± 0.247 | 0.156 ± 0.224 |
-| active_clean  | 23 | 0.382 ± 0.204 | 0.091 ± 0.182 |
-| dual_clean    | 23 | 0.382 ± 0.204 | 0.091 ± 0.182 |
+| target_random | 22 | 0.450 ± 0.189 | 0.132 ± 0.195 |
+| target_clean  | 31 | 0.468 ± 0.174 | 0.103 ± 0.153 |
+| active_clean  | 35 | 0.454 ± 0.226 | 0.075 ± 0.129 |
+| dual_clean    | 35 | 0.454 ± 0.226 | 0.075 ± 0.129 |
 
 Findings:
-- Protocol works (smoke test aa2ar BEDROC=0.95)
-- Per-target variance dominates (std≈0.2, range 0.12-0.86 AUROC)
-- active_clean ≡ dual_clean (DUD-E scaffold/active sharing subsumes Pfam)
-- 8pp regime gap is within SE — not statistically significant at n=18-23
+- AUROC flat across regimes (0.45-0.47, 2pp range)
+- BEDROC ordered random > target_clean > active_clean (expected direction
+  for leakage gap) but random→active = 0.057 ± 0.047 (z=1.2, p≈0.23) —
+  NOT statistically significant
+- Per-target variance still dominates (std 0.19-0.23, range 0.04-0.86)
+- active_clean ≡ dual_clean identically (DUD-E scaffold/active sharing
+  subsumes Pfam family sharing)
 - Honest interpretation: SUBSET-SELECTION effects, not training-time
   leakage gap (frozen paper ckpt doesn't see split filtering)
 
 ## Deferred (in priority order)
 
-1. **Extend Group C to all 102 DUD-E targets** — fetch the 37 missing
-   PDBs from RCSB + extract pockets. Quadruples per-regime n, would let
-   us detect ~4pp gaps with significance.
-2. **Group C on LIT-PCBA** — real assay decoys, AVE-defeated benchmark.
-   Most rigorous retrieval corpus; isolates synthetic-decoy bias.
-3. **Group C on DEKOIS 2.0** — stricter property-matched decoys.
-4. **DrugCLIP retrain with HomoAug-augmentation** — would yield a true
-   training-time leakage-gap audit on the v2 splits.
-5. **LigUnity retrieval audit** — same Group C protocol.
+1. **DrugCLIP retrain with HomoAug-augmentation on a leakage-clean v2
+   train split** — the only path to a true *training-time* leakage gap
+   audit. Frozen-checkpoint zero-shot (what we did) reveals only
+   subset-selection effects.
+2. **Group C on LIT-PCBA** — real assay decoys (AVE-defeated benchmark),
+   15 targets only, would need a mol2→pocket pipeline (~3-4h). Same
+   variance concern though; per-target n is still small.
+3. **Group C on DEKOIS 2.0** — 81 targets, stricter property-matched
+   decoys. Higher value than LIT-PCBA for variance reduction.
+4. **LigUnity retrieval audit** — same Group C protocol, different
+   model encoder.
 
 ## What's committed
 
 | Commit | Content |
 |---|---|
+| 3a60d04 | [Group C+] scale DUD-E retrieval audit to all 102 targets |
+| d77d843 | [Group C+] fetch_missing_dude_pockets.py — RCSB download + pocket extraction |
 | be6afd0 | [Group C] retrieval-native audit tooling for DUD-E (6 scripts under tools/v2_retrieval/) |
 | 3133da2 | [Group C] add retrieval-native DUD-E audit section + honest interpretation |
 | 4d50ed7 | audit: fill DrugCLIP random control — confirms no leakage gap |
