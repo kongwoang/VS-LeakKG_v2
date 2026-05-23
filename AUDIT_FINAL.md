@@ -146,6 +146,32 @@ The random-control row in this table was added per corpus via
 `tools/run_morgan_rf_random.py --corpus <name>`. Outputs under
 `outputs/v2/phase1_full/baselines/<corpus>_random_morgan_rf.csv`.
 
+### Per-axis leakage delta (random→clean, Morgan-RF)
+
+The strength of the leakage signal varies by axis within each corpus.
+Negative deltas indicate the v2 KG removes leakage on that axis; values
+near zero indicate that axis was already clean (or that the corpus's
+decoy construction already defeats it).
+
+| Corpus | random→ligand | random→scaffold | random→protein | random→pocket | random→dual |
+|---|---:|---:|---:|---:|---:|
+| DEKOIS   | −0.2pp | −3.8pp | **−13.1pp** | n/a | −7.4pp |
+| DUD-E    | −0.9pp | −1.2pp | **−7.9pp** | n/a | −5.9pp |
+| LIT-PCBA | −0.5pp | +0.3pp | +3.3pp | n/a | +1.0pp |
+| PDBBind  | −9.9pp | −9.9pp | **−25.1pp** | −6.0pp | −12.7pp |
+
+Reading the table:
+- The bolded `random→protein` deltas are the dominant leakage axis on
+  the three protein-structure corpora (PDBBind, DEKOIS, DUD-E).
+- **PDBBind also leaks ~10pp on the ligand and scaffold axes** —
+  unusual; the corpus's exact-binder definition means individual
+  ligands repeat across protein contexts.
+- DEKOIS and DUD-E *don't* leak much on the ligand axis (−0.2pp / −0.9pp)
+  — their property-matched decoys defeat ligand-only Morgan-RF on
+  random splits already, so the KG can't remove more.
+- LIT-PCBA shows non-significant signal on every axis (max ±3pp). AVE
+  preprocessing has done the audit's job for us.
+
 See PHASE1_FINAL_REPORT.md § Findings F1-F4 for per-step numbers.
 
 ## Group B placeholder — paper-config reproduction
