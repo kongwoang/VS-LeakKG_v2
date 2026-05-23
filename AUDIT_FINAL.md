@@ -93,6 +93,75 @@ corpus and cross-config comparisons remain out of scope. This is the
 "never compute paper-minus-ours" fairness gate fixed in
 `memory/phase2_fairness_policy.md`.
 
+## DrugCLIP — third-model attempt
+
+We tried to add DrugCLIP as a third model in Group A. Two attempts; both
+useful as findings even though neither produced a clean Group-A row.
+
+### Attempt 1 — retrain DrugCLIP on v2 train splits
+
+Built unimol-format LMDBs from v2 ligand/protein/dual train splits and ran
+DrugCLIP's published `agg_config`-equivalent training. Did not converge:
+the in-batch-softmax objective collapsed to the trivial all-embeddings-equal
+solution by epoch 2 (loss locked at ln(N), gradients clipped to ~zero,
+valid bedroc plateaued at random).
+
+**Root cause**: DrugCLIP's paper recipe trains on the full PDBBind 2020 +
+HomoAug-augmented corpus (~100K+ positives). Our v2 splits, after the KG
+filters and label decoding, ship ≤10k positives in train. Contrastive
+in-batch-softmax with batch=48 needs a much richer pool of true binders
+than the v2 train sets provide. Switching `--update-freq` to recover the
+paper's effective batch (8 × 6 = 48) restored gradient flow but did not
+fix convergence — the *corpus*, not the optimizer setup, was the binding
+constraint.
+
+This is itself an audit finding: contrastive retrieval models cannot be
+fairly retrained on a leakage-clean PDBBind subset because the leakage
+filter halves an already-small training pool.
+
+### Attempt 2 — paper checkpoint zero-shot on v2 test splits
+
+Downloaded the published DrugCLIP `checkpoint_best.pt` (trained on full
+PDBBind 2020 + HomoAug, the same corpus our v2 splits draw from). Ran a
+per-pocket retrieval AUROC on each v2 test split: for each pocket with a
+known cognate binder, rank that binder against the pool of all other test
+mols and AUROC against the 1-positive / (N−1)-negative ranking.
+
+| Regime | n test pockets w/ binder | mean per-pocket AUROC | median |
+|---|---:|---:|---:|
+| ligand-clean | 1,640 | 0.560 | 0.563 |
+| protein-clean | 2,158 | 0.561 | 0.591 |
+| dual-clean | 2,516 | 0.574 | 0.596 |
+| random (control) | TBD | TBD | TBD |
+
+The published model is essentially flat across leakage regimes. We read
+this as **train-test contamination dominating the signal**: the published
+checkpoint has seen each of our v2 test splits during its own training
+(no protein, ligand, or dual partition of PDBBind is "novel" relative to
+its training data), so the v2 leakage filter does not separate it from
+in-domain performance. A clean Group A audit of DrugCLIP would require
+either (a) retraining from scratch on a single v2 train split (Attempt 1
+shows this needs a HomoAug-equivalent augmentation we did not implement),
+or (b) recovering the paper's training manifest and excluding overlap.
+
+We also report the *flat per-row AUROC* for direct comparison to
+Morgan-RF / SPRINT, with the caveat that DrugCLIP's normalized dot product
+is a **similarity** score, not a calibrated probability — flat AUROC across
+1-row-per-pocket data is the wrong metric for it:
+
+| Regime | DrugCLIP flat AUROC | (vs SPRINT) |
+|---|---:|---:|
+| ligand-clean | 0.482 | 0.762 |
+| protein-clean | 0.490 | 0.589 |
+| dual-clean | 0.505 | 0.731 |
+| random | TBD | 0.837 |
+
+The flat number being ≈0.5 for all regimes is *expected*: DrugCLIP's
+embedding norms vary per-pocket, and cross-pocket score comparison is
+not what the model was trained to do. This row is reported for
+completeness; the per-pocket retrieval AUROC above is the metric we
+believe and the conclusion we report.
+
 ## What this does and does not show
 
 **Shows:**
@@ -104,12 +173,14 @@ corpus and cross-config comparisons remain out of scope. This is the
 - AVE-style decoys (LIT-PCBA) successfully defeat ligand shortcuts; DUD-E / DEKOIS decoys do not.
 
 **Does not show:**
-- That LigUnity exhibits the same pattern. DrugCLIP audit is in flight on the
-  same three v2 splits; LigUnity remains deferred. Both are pretrained models
-  whose published training corpus does not match ours exactly; auditing them
-  fairly needs either (a) a paper-config zero-shot eval on our test splits or
-  (b) a full retrain on our splits with corpus-matched data prep (raw PDBBind
-  PDB + RDKit ligand conformers, ~1 day data prep).
+- That DrugCLIP cleanly confirms the pattern. We tried both paths and both
+  hit corpus-related blockers — paper-checkpoint zero-shot suffers train/test
+  contamination (the paper's training corpus IS PDBBind 2020+HomoAug, our
+  test splits are subsets of PDBBind 2020); retrain-from-scratch failed to
+  converge on v2 train splits (≤10k positives is too small for in-batch
+  softmax). Documented in "DrugCLIP — third-model attempt" section below.
+- That LigUnity exhibits the same pattern. Deferred to future work; same
+  corpus/contamination considerations apply.
 - Effect on a second large-scale corpus with a deep model. SPRINT runs on
   DEKOIS / DUD-E / LIT-PCBA were not budget-feasible in this iteration (each
   corpus is 5-30× PDBBind size; one full training run per regime per corpus
@@ -147,7 +218,11 @@ specifics in `PHASE2_SPRINT_FINAL.md`.
 
 ## Scope explicitly deferred
 
-- LigUnity / DrugCLIP audit on v2 PDBBind splits (needs raw PDB + RDKit conformer LMDB build).
+- DrugCLIP retrain on a leakage-clean PDBBind subset with HomoAug-style
+  augmentation (currently the v2 train pool is too small for the contrastive
+  objective; HomoAug would boost it to paper-scale).
+- LigUnity audit on v2 PDBBind splits (same paper-contamination concern as
+  DrugCLIP for any pretrained model whose corpus overlaps PDBBind).
 - Second-corpus deep-model audit (SPRINT on DEKOIS / DUD-E / LIT-PCBA — needs corpus-specific protein-seq lookups + days of training).
 - Pocket-axis leakage on non-PDBBind corpora (needs `example_has_pocket` edges in those v1 graphs).
 - Assay-axis leakage (needs `example_from_assay` edges added to v1 graphs from `chembl_assays.parquet`).
