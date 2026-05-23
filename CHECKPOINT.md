@@ -1,6 +1,8 @@
-# Resume checkpoint — 2026-05-24 01:45 NZST
+# Resume checkpoint — 2026-05-24 03:35 NZST
 
 ## Where things stand
+
+### Group A — PDBBind binary audit (final, shippable)
 
 | Result | Status | Number |
 |---|---|---|
@@ -8,99 +10,72 @@
 | Morgan-RF ligand-clean | done | AUROC 0.7070 |
 | Morgan-RF protein-clean | done | AUROC 0.5549 |
 | Morgan-RF dual-clean | done | AUROC 0.6788 |
-| SPRINT random control | done | **AUROC 0.8370** (AUPR 0.88) |
+| SPRINT random control | done | AUROC 0.8370 |
 | SPRINT ligand-clean | done | AUROC 0.7619 |
 | SPRINT protein-clean | done | AUROC 0.5890 |
 | SPRINT dual-clean | done | AUROC 0.7306 |
-| DrugCLIP retrain on v2 | **abandoned** | mode collapse — corpus too small |
-| DrugCLIP paper ckpt, ligand | done | per-pocket AUROC 0.560 |
-| DrugCLIP paper ckpt, protein | done | per-pocket AUROC 0.561 |
-| DrugCLIP paper ckpt, dual | done | per-pocket AUROC 0.574 |
-| DrugCLIP paper ckpt, random | **building LMDB** | — |
 
-## DrugCLIP story (final)
+Both models drop ~25pp from random control to protein-clean. Model-invariant.
 
-Two attempts, neither produced a clean Group-A row but both are
-informative audit findings:
+### Group C — DUD-E retrieval-native audit (proof-of-protocol complete)
 
-**Attempt 1 — retrain on v2 train splits**. Mode collapse by epoch 2.
-First chain (batch=8, update-freq=1) had gnorm→0; switched to
-update-freq=6 (effective batch=48 to match paper) restored gradient flow
-but valid_bedroc still plateaued — root cause is **corpus size, not
-optimizer**. Paper trains on ~100K+ HomoAug-augmented positives; our v2
-train splits ship ≤10K positives. Contrastive in-batch-softmax can't
-converge on this scale.
+Paper-checkpoint zero-shot, 65/102 DUD-E targets (PDBBind-overlapping):
 
-**Attempt 2 — paper checkpoint zero-shot**. Downloaded the published
-`checkpoint_best.pt` (1.18 GB; trained on full PDBBind 2020 + HomoAug)
-and ran a per-pocket retrieval AUROC on each v2 test split. Result is
-essentially flat across regimes (0.56-0.57). Read this as **train-test
-contamination dominating** — the paper's training corpus IS PDBBind
-2020+HomoAug, our v2 test splits are subsets. The v2 leakage filter does
-not separate the published model from its in-domain performance.
+| Regime | n_test | AUROC mean ± std | BEDROC mean ± std |
+|---|---:|---:|---:|
+| target_random | 18 | 0.458 ± 0.216 | 0.112 ± 0.214 |
+| target_clean  | 18 | 0.468 ± 0.247 | 0.156 ± 0.224 |
+| active_clean  | 23 | 0.382 ± 0.204 | 0.091 ± 0.182 |
+| dual_clean    | 23 | 0.382 ± 0.204 | 0.091 ± 0.182 |
 
-Both findings are documented in `AUDIT_FINAL.md` under the
-"DrugCLIP — third-model attempt" section. The audit headline (Morgan-RF
-+ SPRINT ~25pp drop on protein-clean) is unchanged.
+Findings:
+- Protocol works (smoke test aa2ar BEDROC=0.95)
+- Per-target variance dominates (std≈0.2, range 0.12-0.86 AUROC)
+- active_clean ≡ dual_clean (DUD-E scaffold/active sharing subsumes Pfam)
+- 8pp regime gap is within SE — not statistically significant at n=18-23
+- Honest interpretation: SUBSET-SELECTION effects, not training-time
+  leakage gap (frozen paper ckpt doesn't see split filtering)
 
-## Pending: random-control LMDB for DrugCLIP paper-ckpt
+## Deferred (in priority order)
 
-Random-split DrugCLIP LMDB build is in flight on VUW:
-- pid: 1969319 (and 16 mp workers)
-- log: `/vol/dl-nguyenb5-solar/users/hoangpc/drugclip_runs/lmdb_build_random.log`
-- ETA: ~15 min total (5 min train + 4 min valid + 4 min test)
+1. **Extend Group C to all 102 DUD-E targets** — fetch the 37 missing
+   PDBs from RCSB + extract pockets. Quadruples per-regime n, would let
+   us detect ~4pp gaps with significance.
+2. **Group C on LIT-PCBA** — real assay decoys, AVE-defeated benchmark.
+   Most rigorous retrieval corpus; isolates synthetic-decoy bias.
+3. **Group C on DEKOIS 2.0** — stricter property-matched decoys.
+4. **DrugCLIP retrain with HomoAug-augmentation** — would yield a true
+   training-time leakage-gap audit on the v2 splits.
+5. **LigUnity retrieval audit** — same Group C protocol.
 
-When `data/v2_pdbbind_random/test.lmdb` lands, run:
-```bash
-ssh kongwoang "ssh VUW '
-ln -sfn ../dict_mol.txt /vol/dl-nguyenb5-solar/users/hoangpc/DrugCLIP/data/v2_pdbbind_random/dict_mol.txt
-ln -sfn ../dict_pkt.txt /vol/dl-nguyenb5-solar/users/hoangpc/DrugCLIP/data/v2_pdbbind_random/dict_pkt.txt
-bash /vol/dl-nguyenb5-solar/users/hoangpc/eval_drugclip_paperckpt_retrieval.sh 1
-'"
-```
-(retrieval script currently runs ligand/protein/dual — extend to include
-random by editing the for-loop, or run the random one directly).
+## What's committed
 
-Then plug random numbers into both DrugCLIP tables in AUDIT_FINAL.md.
-
-## What's running now
-
-| Process | Purpose | nohup pid |
-|---|---|---|
-| v2_to_drugclip_lmdb random | builds train/valid/test.lmdb for random split | 1969319 |
-
-GPU 2 is idle (no training in flight). GPU 0/1 are someone else's.
-
-## What's already done and committed
-
-| File | Purpose |
+| Commit | Content |
 |---|---|
-| `AUDIT_FINAL.md` | Unified audit deliverable with DrugCLIP findings + Morgan-RF + SPRINT all 4 rows incl. random control |
-| `PHASE2_SPRINT_FINAL.md` | SPRINT details + fairness statement |
-| `PHASE1_FINAL_REPORT.md` | Phase 1 multi-corpus baseline |
-| `tools/build_random_pdbbind_split.py` | random split builder |
-| `tools/run_morgan_rf_random.py` | Morgan-RF on random control |
-| `tools/v2_to_drugclip_lmdb.py` | DrugCLIP LMDB builder for v2 splits |
-| `PHASE2_DRUGCLIP_BLOCKER.md` | Original C-ABI blocker (resolved by pinned drugclip_env) |
+| be6afd0 | [Group C] retrieval-native audit tooling for DUD-E (6 scripts under tools/v2_retrieval/) |
+| 3133da2 | [Group C] add retrieval-native DUD-E audit section + honest interpretation |
+| 4d50ed7 | audit: fill DrugCLIP random control — confirms no leakage gap |
+| a234b4d | checkpoint: refresh state after DrugCLIP attempts |
+| 86a740a | audit: document DrugCLIP attempts — retrain + paper-ckpt blockers |
+| 55b6fa2 | audit: SPRINT random control = 0.8370; DrugCLIP retrain in flight |
 
-## On VUW
+## Artifacts (on VUW)
 
-Custom artifacts (training infra, not in repo):
-- `launch_drugclip.sh` — train launcher (update-freq=6, the principled
-  paper-recipe batch but doesn't fix the corpus size)
-- `chain_drugclip.sh` — sequential ligand→protein→dual (deprecated, the
-  retrain path was abandoned)
-- `eval_drugclip.sh` — flat-AUROC eval launcher
-- `eval_drugclip_paperckpt.sh` — flat-AUROC across all 3 splits for paper ckpt
-- `eval_drugclip_paperckpt_retrieval.sh` — per-pocket retrieval AUROC for paper ckpt
-- `DrugCLIP/eval_drugclip_v2.py` — flat AUROC evaluator
-- `DrugCLIP/eval_drugclip_v2_retrieval.py` — per-pocket retrieval evaluator
-- `SPRINT/run_test_only.py` — SPRINT weights_only=False patch
-- Mirror copies live under `D:\hoangpc\VS-LeakKG\.tmp\` on the dev box
+- `outputs/v2_retrieval/graph_dude/v2_target_node.parquet` — 102 targets
+- `outputs/v2_retrieval/graph_dude/v2_active_of_target.parquet` — 22,805 edges
+- `outputs/v2_retrieval/graph_dude/v2_target_in_family.parquet` — 82 families
+- `outputs/v2_retrieval/splits/dude/{target_random,target_clean,active_clean,dual_clean}.parquet`
+- `outputs/v2_retrieval/diagnostics/dude_contamination.csv`
+- `outputs/v2_retrieval/results/dude/<regime>_per_target.csv`
+- `DrugCLIP/data/dude_retrieval/<target>/{pocket,mols}.lmdb` × 65 targets, 80142 mol rows
+- `DrugCLIP/eval_dude_retrieval.py` — per-target retrieval evaluator
+- `eval_dude_retrieval.py` driver wrapper at `/vol/.../run_dude_eval_all_regimes.sh`
 
-Paper-checkpoint cache: `/vol/dl-nguyenb5-solar/users/hoangpc/drugclip_data/paper_ckpt/drugclip_data/checkpoint_best.pt` (1.18 GB, from gdown).
+## Audit is shippable on commits up to `3133da2`
 
-## Envs
-
-- `drugclip_env`: torch 2.4.0+cu121, numpy 1.26.4, unicore from Uni-Core source. Path: `/vol/dl-nguyenb5-solar/users/hoangpc/envs/drugclip_env`.
-- `vsleak2`: torch 2.12 + numpy 2.4 (SPRINT + v2 baselines + LMDB build). Path: `/vol/dl-nguyenb5-solar/users/hoangpc/envs/vsleak2`.
+The Group A binary audit headline (model-invariant 25pp leakage drop on
+PDBBind protein-clean) is the primary deliverable. Group C is a
+proof-of-protocol that adds a second audit track for retrieval models;
+its findings are documented honestly (protocol validated, but per-target
+variance + frozen-checkpoint limits prevent a true training-time gap
+claim).
