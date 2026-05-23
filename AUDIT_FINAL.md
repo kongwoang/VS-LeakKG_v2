@@ -301,6 +301,90 @@ targets is much sparser than DUD-E's.
 
 Per-target CSVs at `outputs/v2_retrieval/results/dekois/<regime>_per_target.csv`.
 
+## Group C++ — Cross-method retrieval audit (26 methods × KG splits)
+
+The LigUnity paper (Patterns 2025) publishes per-target BEDROC / ROC-AUC /
+EF1% for **26 retrieval methods on DUD-E** (102 targets) and **18 methods
+on DEKOIS** (81 targets). Each method uses its own paper-native eval
+protocol (full decoy pools, multi-conformer, etc.) — paper-comparable
+numbers across the board.
+
+We apply our v2 KG target-level split regimes as a *filter* over these
+published per-target tables. For each (method, regime) pair we compute
+the mean per-target metric across that regime's test targets. This gives
+a 26-method × 4-regime BEDROC table without retraining anything — each
+method scores its native eval, we just slice it.
+
+This is the cleanest cross-method audit we can run on retrieval models.
+
+### DUD-E — BEDROC (α=80.5) by method × regime, with random→dual delta
+
+| Method | random (n=22) | target_clean (n=31) | active_clean (n=35) | dual_clean (n=35) | Δ(dual−random) |
+|---|---:|---:|---:|---:|---:|
+| LigUnity        | 0.832 | 0.729 | 0.811 | 0.811 | −0.02 |
+| LigUnity (seq)  | 0.656 | 0.553 | 0.592 | 0.592 | −0.06 |
+| Pocket-DTA      | 0.611 | 0.453 | 0.393 | 0.393 | **−0.22** |
+| RTMScore        | 0.602 | 0.525 | 0.592 | 0.592 | −0.01 |
+| Denvis-G        | 0.594 | 0.538 | 0.534 | 0.534 | −0.06 |
+| GenScore        | 0.534 | 0.454 | 0.474 | 0.474 | −0.06 |
+| DrugCLIP        | 0.519 | 0.497 | 0.566 | 0.566 | +0.05 |
+| EquiScore       | 0.485 | 0.430 | 0.479 | 0.479 | −0.01 |
+| Sequence-DTA    | 0.483 | 0.386 | 0.362 | 0.362 | **−0.12** |
+| Vina            | 0.236 | 0.184 | 0.171 | 0.171 | −0.07 |
+
+(Full 26-method table in `outputs/v2_retrieval/results/dude_cross_method/dude_BEDROC_per_regime.csv`)
+
+### DEKOIS — BEDROC by method × regime, with random→dual delta
+
+| Method | random (n=18) | target_clean (n=18) | active_clean (n=18) | scaffold_clean (n=15) | dual_clean (n=22) | Δ(dual−random) |
+|---|---:|---:|---:|---:|---:|---:|
+| LigUnity       | 0.783 | 0.865 | 0.873 | 0.892 | 0.867 | +0.08 |
+| LigUnity (seq) | 0.753 | 0.834 | 0.834 | 0.875 | 0.722 | −0.03 |
+| Pocket-DTA     | 0.669 | 0.742 | 0.645 | 0.723 | 0.705 | +0.04 |
+| Sequence-DTA   | 0.596 | 0.662 | 0.565 | 0.659 | 0.587 | −0.01 |
+| RTMScore       | 0.417 | 0.532 | 0.639 | 0.577 | 0.603 | +0.19 |
+| GenScore       | 0.404 | 0.484 | 0.498 | 0.488 | 0.570 | +0.17 |
+| DrugCLIP       | 0.376 | 0.542 | 0.567 | 0.614 | 0.471 | +0.10 |
+
+(Full 18-method table in `outputs/v2_retrieval/results/dekois_cross_method/dekois_BEDROC_per_regime.csv`)
+
+### Interpretation
+
+**No method shows a consistent, large leakage gap across both corpora.**
+On DUD-E most methods drop slightly under target_clean / active_clean
+(direction-consistent with a leakage signal); on DEKOIS most methods
+*increase* under target_clean (opposite direction). This is the
+**subset-selection effect** dominating: the KG's clean-split test target
+sets aren't a random slice — they happen to be easier or harder than the
+random control depending on what makes the corpus' targets cluster.
+
+**Pocket-DTA on DUD-E is the largest single drop** (−0.22 BEDROC,
+random→dual). It also has the largest random-control BEDROC after the
+LigUnity family. This is suggestive of corpus-specific overfitting that
+the KG's target-clean / active-clean filter exposes — but on DEKOIS the
+same model shows +0.04, so we can't claim a systematic effect.
+
+**LigUnity is by far the strongest method on both corpora** (random
+BEDROC 0.83 / 0.78) and shows small, often-opposite deltas across
+regimes (−0.02 / +0.08). This matches the paper's explicit
+training-time leakage control: LigUnity's training set excluded test
+proteins from DUD-E / DEKOIS / LIT-PCBA, so it already operates in a
+"novel-target" regime relative to those benchmarks. The KG's target-
+level filter doesn't separate it further.
+
+**What this confirms about the audit framework:**
+- v2 KG target-level splits are doing structural work (they select
+  meaningfully different target subsets — see the n column variation
+  per regime).
+- Whether a clean→random gap shows up at the BEDROC level is **highly
+  model-dependent**, and on retrieval models without training-time
+  leakage control, the variance and corpus structure dominate the
+  signal at small n.
+- A direction-consistent, statistically-significant retrieval-native
+  leakage gap requires either (a) much larger n per regime (which DUD-E
+  and DEKOIS don't afford), or (b) training-time retraining on each
+  KG split, which is the blocked future-work item.
+
 ## Appendix — DrugCLIP in Group A (record of diagnostic path)
 
 This section documents the Group A attempts that led to the Group C pivot
