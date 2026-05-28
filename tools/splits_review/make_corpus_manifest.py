@@ -19,9 +19,9 @@ from .schemas import CORPUS_MANIFEST_SCHEMA
 
 
 CORPUS_TO_GRAPH = {
-    "dekois":  "graph_dekois/v2_nodes.parquet",
-    "dude":    "graph_dude/v2_nodes.parquet",
-    "litpcba": "graph_litpcba_ave/v2_nodes.parquet",
+    "dekois":  "graph_dekois",
+    "dude":    "graph_dude",
+    "litpcba": "graph_litpcba_ave",
 }
 
 
@@ -35,45 +35,42 @@ def parse_props(props_str: str) -> dict:
 
 
 def build_manifest(v2_root: Path, corpus: str) -> pl.DataFrame:
-    nodes = pl.read_parquet(v2_root / CORPUS_TO_GRAPH[corpus])
+    graph_dir = v2_root / CORPUS_TO_GRAPH[corpus]
+    nodes = pl.read_parquet(graph_dir / "v2_nodes.parquet")
+    edges = pl.read_parquet(graph_dir / "v2_edges.parquet")
 
-    # Examples carry label + target + ligand id; we want a row per Example.
+    # Examples carry label + target.
     ex = nodes.filter(pl.col("node_type") == "Example")
     print(f"[{corpus}] Examples: {ex.height}")
 
-    # Expand props json
-    parsed = [parse_props(p) for p in ex["props"].to_list()]
-    target_ids = []
-    labels = []
-    for p in parsed:
-        target_ids.append(p.get("target", ""))
-        # label may be int or str
-        lab = p.get("label", 0)
-        try:
-            labels.append(int(lab))
-        except Exception:
-            labels.append(0)
-
-    # Look up the ligand_id and smiles by Example -> Ligand edges.
-    # We rely on the convention that example_id encodes target in the id string,
-    # but the canonical mapping is in props["ligand_id"] when present, otherwise
-    # we'll need to load the edges. Inspect first to know.
-    ligand_ids = []
-    smiles_list = []
-    scaffolds = []
-    for p in parsed:
-        ligand_ids.append(p.get("ligand_id", ""))
-        smiles_list.append(p.get("smiles", ""))
-        scaffolds.append(p.get("scaffold_smiles", None))
-
-    df = pl.DataFrame({
-        "example_id":      ex["node_id"].to_list(),
-        "target_id":       target_ids,
-        "ligand_id":       ligand_ids,
-        "smiles":          smiles_list,
-        "label":           labels,
-        "scaffold_smiles": scaffolds,
+    # Parse Example props for label + target.
+    ex_props = [parse_props(p) for p in ex["props"].to_list()]
+    ex_df = pl.DataFrame({
+        "example_id": ex["node_id"].to_list(),
+        "target_id":  [p.get("target", "") for p in ex_props],
+        "label":      [int(p.get("label", 0) or 0) for p in ex_props],
     })
+
+    # Edge Example -> Ligand (edge_type='example_has_ligand'). Ligand node carries
+    # the canonical SMILES (in `label`) and scaffold_smiles (in `props`).
+    e_lig = edges.filter(pl.col("edge_type") == "example_has_ligand")\
+                 .select(pl.col("src").alias("example_id"),
+                         pl.col("dst").alias("ligand_id"))
+    lig_nodes = nodes.filter(pl.col("node_type") == "Ligand")
+    lig_props = [parse_props(p) for p in lig_nodes["props"].to_list()]
+    lig_df = pl.DataFrame({
+        "ligand_id":       lig_nodes["node_id"].to_list(),
+        "smiles":          lig_nodes["label"].to_list(),
+        "scaffold_smiles": [p.get("scaffold_smiles") for p in lig_props],
+    })
+
+    # Join Example -> Ligand -> SMILES/scaffold.
+    df = ex_df.join(e_lig, on="example_id", how="left")\
+              .join(lig_df, on="ligand_id", how="left")
+
+    # Fill the remaining manifest columns with nulls; corpus-specific enrichment
+    # (uniprot, family, pdb_id, assay_id, source, year) lands in a follow-up
+    # `enrich_manifest.py` pass that joins on protein_meta.parquet.
 
     # Fill the remaining columns with nulls (corpus-dependent enrichment lives in
     # later passes; we keep them nullable up front).
@@ -99,10 +96,17 @@ def main() -> int:
     ap.add_argument("--v2-root", required=True, type=Path,
                     help="path to outputs/v2/")
     ap.add_argument("--corpus",  required=True, choices=["dekois", "dude", "litpcba"])
+    ap.add_argument("--protein-meta", required=False, type=Path, default=None,
+                    help="protein_meta.parquet from fetch_sequences.py "
+                         "(adds uniprot, family).")
     ap.add_argument("--out",     required=True, type=Path)
     args = ap.parse_args()
 
     df = build_manifest(args.v2_root, args.corpus)
+    if args.protein_meta is not None and args.protein_meta.exists():
+        meta = pl.read_parquet(args.protein_meta).select(["target_id", "uniprot", "family"])\
+                  .rename({"family": "protein_family"})
+        df = df.drop("uniprot", "protein_family").join(meta, on="target_id", how="left")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(args.out)
     print(f"wrote {args.out}  rows={df.height}  targets={df['target_id'].n_unique()}  "
