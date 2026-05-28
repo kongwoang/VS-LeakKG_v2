@@ -36,6 +36,8 @@ from .schemas import hash_manifest_slice
 
 THRESHOLDS = np.arange(0.0, 1.01, 0.1)
 N_MAX_ACTIVES = 5000
+N_MAX_INACTIVES_FOR_GA = 5000   # cached matrices: 5000^2 x 4B = ~100MB per target
+N_MIN_PER_CLASS = 20            # skip targets with too few actives/inactives
 ITER_CAP = 300
 B_TARGET = 0.01
 
@@ -81,16 +83,30 @@ def split_target_ave_cached(slc: pl.DataFrame, seed: int) -> tuple[list[dict], d
     n_act_full = len(actives["smiles"])
 
     sub_flag = False
+    n_in_full = len(inactives["smiles"])
+    inact_sampled_for_GA = False
+
+    # Actives subsampling triggers the binding subset_manifest rule.
     if n_act_full > N_MAX_ACTIVES:
         sub_flag = True
         idx = rng.choice(n_act_full, size=N_MAX_ACTIVES, replace=False)
         actives = {k: [v[i] for i in idx] for k, v in actives.items()}
+
+    # Inactives subsampling is internal to AVE GA only (cached matrices won't
+    # scale otherwise). This does NOT shrink the manifest that other splitters
+    # see; documented in the stats row.
+    if n_in_full > N_MAX_INACTIVES_FOR_GA:
+        inact_sampled_for_GA = True
+        idx = rng.choice(n_in_full, size=N_MAX_INACTIVES_FOR_GA, replace=False)
+        inactives = {k: [v[i] for i in idx] for k, v in inactives.items()}
+
     n_act = len(actives["smiles"])
     n_in  = len(inactives["smiles"])
-    if n_act < 4 or n_in < 4:
+    if n_act < N_MIN_PER_CLASS or n_in < N_MIN_PER_CLASS:
         return [], {"B": float("nan"), "iters": 0, "subsampled": sub_flag,
                     "dropped_pct": 0.0, "runtime_s": 0.0,
-                    "termination": "skipped_too_few_samples"}
+                    "inact_sampled_for_GA": inact_sampled_for_GA,
+                    "termination": f"skipped_too_few_samples(act={n_act},in={n_in})"}
 
     t_start = time.time()
     fp_a = fingerprints(actives["smiles"])
@@ -167,6 +183,9 @@ def split_target_ave_cached(slc: pl.DataFrame, seed: int) -> tuple[list[dict], d
         "dropped_pct": 100.0 * (n_act_full - n_act) / max(n_act_full, 1),
         "runtime_s": runtime,
         "termination": term,
+        "inact_sampled_for_GA": inact_sampled_for_GA,
+        "n_act_full": n_act_full, "n_act_used": n_act,
+        "n_in_full":  n_in_full,  "n_in_used":  n_in,
     }
     return rows, stats
 
