@@ -40,14 +40,18 @@ MODE_A_SPLITS = [
 ]
 
 MODE_B_SPLITS = [
-    ("random_modeB",          "splitter_random",  "",                                "B", None),
-    ("scaffold_modeB",        "splitter_scaffold", "",                               "B", None),
-    ("drugood_scaffold_modeB","splitter_drugood", "--axis scaffold",                 "B", None),
-    ("drugood_size_modeB",    "splitter_drugood", "--axis size",                     "B", None),
-    ("drugood_protein_modeB", "splitter_drugood", "--axis protein",                  "B", None),
-    ("drugood_family_modeB",  "splitter_drugood", "--axis protein_family",           "B", None),
-    ("kg_protein_modeB",      "splitter_kg",      "--axis protein --kg-splits {KGSPLITS}", "B", None),
-    ("kg_dual_modeB",         "splitter_kg",      "--axis dual --kg-splits {KGSPLITS}", "B", None),
+    ("random_modeB",            "splitter_random",   "",                                 "B", None),
+    ("scaffold_modeB",          "splitter_scaffold", "",                                 "B", None),
+    ("protein_modeB",           "splitter_protein",  "--protein-meta {PROT_META}",       "B", None),
+    ("drugood_scaffold_modeB",  "splitter_drugood",  "--axis scaffold",                  "B", None),
+    ("drugood_size_modeB",      "splitter_drugood",  "--axis size",                      "B", None),
+    ("drugood_protein_modeB",   "splitter_drugood",  "--axis protein",                   "B", None),
+    ("drugood_family_modeB",    "splitter_drugood",  "--axis protein_family",            "B", None),
+    ("kg_protein_modeB",        "splitter_kg",       "--axis protein --kg-splits {KGSPLITS}", "B", None),
+    ("kg_dual_modeB",           "splitter_kg",       "--axis dual --kg-splits {KGSPLITS}",    "B", None),
+    ("datasail_s1_ligand_modeB","splitter_datasail", "--datasail-mode s1_ligand --protein-meta {PROT_META}", "B", None),
+    ("datasail_s1_protein_modeB","splitter_datasail","--datasail-mode s1_protein --protein-meta {PROT_META}", "B", None),
+    ("datasail_s2_modeB",       "splitter_datasail", "--datasail-mode s2 --protein-meta {PROT_META}",        "B", None),
 ]
 
 
@@ -72,6 +76,7 @@ def main() -> int:
     data_dir.mkdir(parents=True, exist_ok=True)
     subset_dir.mkdir(parents=True, exist_ok=True)
     kg_splits = args.kg_splits_root / corpus
+    prot_meta = out / "protein_meta.parquet"
 
     summary: list[dict] = []
 
@@ -86,7 +91,7 @@ def main() -> int:
         cmd = (f"{args.python} -m tools.splits_review.{mod} "
                f"--manifest {manifest} --subset-dir {subset_dir} "
                f"--mode {mode} --out {out_split} "
-               f"{extra.format(OUT=args.out_root, SUBSET=subset_dir, KGSPLITS=kg_splits)}")
+               f"{extra.format(OUT=args.out_root, SUBSET=subset_dir, KGSPLITS=kg_splits, PROT_META=prot_meta)}")
         t0 = time.time()
         rc, _ = sh(cmd)
         rt = time.time() - t0

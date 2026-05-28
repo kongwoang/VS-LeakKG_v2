@@ -51,31 +51,38 @@ def main() -> int:
     ap.add_argument("--identity",  default=0.3, type=float)
     ap.add_argument("--seed",      default=2025, type=int)
     ap.add_argument("--subset-dir", required=False, type=Path, default=None)
+    ap.add_argument("--protein-meta", required=False, type=Path, default=None,
+                    help="protein_meta.parquet with target_id+sequence; required "
+                         "for real protein-similarity splits.")
     args = ap.parse_args()
     if args.mode != "B":
         raise SystemExit("protein splitter is Mode B only (cross-target).")
 
     manifest = pl.read_parquet(args.manifest)
-    # Build uniprot -> seq table from manifest. If no uniprot, fall back to target_id.
+    # Build uniprot -> seq table by joining with protein_meta if available.
+    protein_meta = getattr(args, "protein_meta", None)
     seq_lookup: dict[str, str] = {}
-    if manifest["uniprot"].is_not_null().any():
-        for r in manifest.unique(subset=["uniprot"]).iter_rows(named=True):
-            if r["uniprot"]:
-                # Manifest does not carry sequences directly in this skeleton.
-                # In a follow-up, populate sequence in make_corpus_manifest from
-                # the PDB chains. For now, fall through to target_id-based clusters
-                # when no sequence is present.
-                pass
+    is_target_control = False
+    if protein_meta is not None and protein_meta.exists():
+        meta = pl.read_parquet(protein_meta)
+        for r in meta.iter_rows(named=True):
+            if r.get("sequence"):
+                seq_lookup[r["target_id"]] = r["sequence"]
 
     if seq_lookup:
         with tempfile.TemporaryDirectory() as td:
             rep_map = cluster_sequences(seq_lookup, args.identity, Path(td))
         cluster_col = pl.Series("_clu",
-            [rep_map.get(u, u or t) for u, t in zip(
-                manifest["uniprot"].to_list(), manifest["target_id"].to_list())])
+            [rep_map.get(t, t) for t in manifest["target_id"].to_list()])
+        print(f"  protein splitter: clustered {len(seq_lookup)} sequences -> "
+              f"{len(set(rep_map.values()))} clusters at identity {args.identity}")
     else:
-        # Degenerate fallback: cluster ≡ target.
+        # No sequences — explicitly label as target_split_control rather than
+        # silently degenerate. Output file naming should reflect this externally.
         cluster_col = manifest["target_id"].alias("_clu")
+        is_target_control = True
+        print("  WARN: no sequences available — this is a TARGET_SPLIT_CONTROL, "
+              "not a protein-similarity split. Mark as control in the report.")
 
     manifest = manifest.with_columns(cluster_col)
     sizes = manifest.group_by("_clu").agg(pl.len().alias("n")).sort("n", descending=True)
