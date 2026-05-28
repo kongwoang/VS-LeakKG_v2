@@ -25,6 +25,7 @@ except Exception:
     HAS_RDKIT = False
 
 from .schemas import TABLE_SPLIT_QUALITY_COLUMNS
+from .axis_kernels import score_all_axes, AxisResult
 
 
 def _fp(smi: str):
@@ -76,6 +77,7 @@ def main() -> int:
     merged = manifest.join(split.select(["example_id", "fold"]), on="example_id", how="inner")
 
     out_rows: list[dict] = []
+    method_log_rows: list[dict] = []
     if args.mode == "A":
         target_iter = sorted(merged["target_id"].unique().to_list())
     else:
@@ -92,7 +94,25 @@ def main() -> int:
             [_fp(s) for s in train["smiles"].to_list()],
             [_fp(s) for s in test["smiles"].to_list()],
         )
+        # Per-axis residual c_a using axis_kernels.
+        if train.height > 0 and test.height > 0:
+            axis_res = score_all_axes(train, test, corpus=args.corpus, mode=args.mode)
+        else:
+            axis_res = {a: AxisResult(float("nan"), "skipped (empty fold)", "unavailable")
+                        for a in ["ligand","scaffold","protein","protein_family",
+                                  "pocket","assay","source","time"]}
         rt = time.time() - t0
+
+        # Aggregate c_total over usable axes only.
+        usable = [r.c_mean for r in axis_res.values()
+                  if r.status == "usable" and not (r.c_mean != r.c_mean)]  # filter NaN
+        c_total = float(np.mean(usable)) if usable else float("nan")
+
+        def _axis_cell(name: str) -> str:
+            r = axis_res[name]
+            if r.status in ("degenerate", "unavailable"):
+                return r.status
+            return f"{r.c_mean:.4f}" if r.c_mean == r.c_mean else "nan"
 
         row = {c: None for c in TABLE_SPLIT_QUALITY_COLUMNS}
         row.update({
@@ -110,20 +130,47 @@ def main() -> int:
             "n_test_neg":  int((test["label"] == 0).sum()),
             "class_balance_train": class_balance(train),
             "class_balance_test":  class_balance(test),
+            "c_total_mean":     c_total,
+            "c_ligand":         _axis_cell("ligand"),
+            "c_scaffold":       _axis_cell("scaffold"),
+            "c_protein":        _axis_cell("protein"),
+            "c_protein_family": _axis_cell("protein_family"),
+            "c_pocket":         _axis_cell("pocket"),
+            "c_assay":          _axis_cell("assay"),
+            "c_source":         _axis_cell("source"),
+            "c_time":           _axis_cell("time"),
             "max_lig_tanimoto": max_lig_tani,
             "input_hash": split["input_hash"][0] if split.height else "",
             "seed":       args.seed,
             "runtime_s":  rt,
         })
         out_rows.append(row)
+        for ax, r in axis_res.items():
+            method_log_rows.append({
+                "corpus": args.corpus, "mode": args.mode, "splitter": args.splitter,
+                "target_id": tid, "axis": ax,
+                "status": r.status, "c_mean": r.c_mean, "method": r.method,
+            })
 
     args.out_csv.parent.mkdir(parents=True, exist_ok=True)
     df = pl.DataFrame(out_rows)[TABLE_SPLIT_QUALITY_COLUMNS]
     if args.out_csv.exists():
-        existing = pl.read_csv(args.out_csv)
-        df = pl.concat([existing, df], how="vertical_relaxed")
+        existing = pl.read_csv(args.out_csv, infer_schema_length=0)
+        df = pl.concat([existing.cast({c: pl.Utf8 for c in existing.columns}),
+                        df.cast({c: pl.Utf8 for c in df.columns})], how="vertical_relaxed")
     df.write_csv(args.out_csv)
     print(f"appended {len(out_rows)} rows to {args.out_csv}")
+
+    # Companion log: per-(corpus, mode, splitter, target, axis) with status + method.
+    log_csv = args.out_csv.with_name(args.out_csv.stem + "__axis_method_log.csv")
+    log_df = pl.DataFrame(method_log_rows)
+    if log_csv.exists():
+        existing = pl.read_csv(log_csv, infer_schema_length=0)
+        log_df = pl.concat([existing.cast({c: pl.Utf8 for c in existing.columns}),
+                            log_df.cast({c: pl.Utf8 for c in log_df.columns})],
+                           how="vertical_relaxed")
+    log_df.write_csv(log_csv)
+    print(f"appended {len(method_log_rows)} method-log rows to {log_csv}")
     return 0
 
 
