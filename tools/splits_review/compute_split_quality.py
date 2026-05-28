@@ -37,19 +37,24 @@ def _fp(smi: str):
     return AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048)
 
 
+TRAIN_FP_SAMPLE_CAP = 5000  # cap train FPs sampled for max-Tanimoto
+_RNG_TANI = np.random.default_rng(2025)
+
 def max_train_test_tanimoto(train_fps, test_fps) -> float:
-    if not train_fps or not test_fps:
+    refs = [r for r in train_fps if r is not None]
+    queries = [q for q in test_fps if q is not None]
+    if not refs or not queries:
         return 0.0
+    if len(refs) > TRAIN_FP_SAMPLE_CAP:
+        idx = _RNG_TANI.choice(len(refs), size=TRAIN_FP_SAMPLE_CAP, replace=False)
+        refs = [refs[int(i)] for i in idx]
     mx = 0.0
-    for q in test_fps:
-        if q is None:
-            continue
-        refs = [r for r in train_fps if r is not None]
-        if not refs:
-            continue
+    for q in queries:
         sims = DataStructs.BulkTanimotoSimilarity(q, refs)
         if sims:
-            mx = max(mx, max(sims))
+            m = max(sims)
+            if m > mx:
+                mx = m
     return float(mx)
 
 
