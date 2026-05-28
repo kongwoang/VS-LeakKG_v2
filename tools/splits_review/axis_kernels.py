@@ -36,6 +36,7 @@ except Exception:
 
 
 TRAIN_SAMPLE_CAP = 5000  # for Tanimoto NN on ligand axis
+TEST_SAMPLE_CAP  = 2000  # cap test rows scored on ligand axis (Mode B pooled is huge)
 RNG = np.random.default_rng(2025)
 
 
@@ -71,15 +72,22 @@ def _set_membership(train: pl.Series, test: pl.Series) -> float:
 def axis_ligand(train: pl.DataFrame, test: pl.DataFrame) -> AxisResult:
     if not HAS_RDKIT or train.height == 0 or test.height == 0:
         return AxisResult(float("nan"), "ligand: skipped (RDKit missing or empty fold)", "unavailable")
+    notes = []
     if train.height > TRAIN_SAMPLE_CAP:
         idx = RNG.choice(train.height, size=TRAIN_SAMPLE_CAP, replace=False)
         train_smi = [train["smiles"][int(i)] for i in idx]
-        method_note = f"max Tanimoto ECFP4; train sampled to {TRAIN_SAMPLE_CAP}"
+        notes.append(f"train sampled to {TRAIN_SAMPLE_CAP}")
     else:
         train_smi = train["smiles"].to_list()
-        method_note = "max Tanimoto ECFP4"
+    if test.height > TEST_SAMPLE_CAP:
+        idx = RNG.choice(test.height, size=TEST_SAMPLE_CAP, replace=False)
+        test_smi = [test["smiles"][int(i)] for i in idx]
+        notes.append(f"test sampled to {TEST_SAMPLE_CAP}")
+    else:
+        test_smi = test["smiles"].to_list()
+    method_note = "max Tanimoto ECFP4" + ("; " + ", ".join(notes) if notes else "")
     train_fps = [f for f in _morgan_fps(train_smi) if f is not None]
-    test_fps  = _morgan_fps(test["smiles"].to_list())
+    test_fps  = _morgan_fps(test_smi)
     if not train_fps:
         return AxisResult(float("nan"), "ligand: no valid train FPs", "unavailable")
     sims = []
