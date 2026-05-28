@@ -18,12 +18,20 @@ import time
 from pathlib import Path
 
 
+import os
+MMSEQS_PATH_DIR = "/vol/dl-nguyenb5-solar/users/hoangpc/bin"
+DATASAIL_PYPATH = "/vol/dl-nguyenb5-solar/users/hoangpc/envs/datasail_pkgs"
+
 def sh(cmd: str, env: dict | None = None) -> tuple[int, str]:
-    print(f"\n$ {cmd}")
-    p = subprocess.run(cmd, shell=True, capture_output=True, text=True, env=env)
-    print(p.stdout[-3000:] if p.stdout else "")
+    print(f"\n$ {cmd}", flush=True)
+    real_env = os.environ.copy()
+    if env: real_env.update(env)
+    real_env["PATH"] = f"{MMSEQS_PATH_DIR}:{real_env.get('PATH', '')}"
+    real_env["PYTHONPATH"] = f"{DATASAIL_PYPATH}:{real_env.get('PYTHONPATH', '')}"
+    p = subprocess.run(cmd, shell=True, capture_output=True, text=True, env=real_env)
+    print(p.stdout[-3000:] if p.stdout else "", flush=True)
     if p.returncode != 0:
-        print("[STDERR]", p.stderr[-2000:])
+        print("[STDERR]", p.stderr[-2000:], flush=True)
     return p.returncode, (p.stdout + p.stderr)
 
 
@@ -93,10 +101,14 @@ def main() -> int:
                f"--mode {mode} --out {out_split} "
                f"{extra.format(OUT=args.out_root, SUBSET=subset_dir, KGSPLITS=kg_splits, PROT_META=prot_meta)}")
         t0 = time.time()
-        rc, _ = sh(cmd)
+        rc, output = sh(cmd)
         rt = time.time() - t0
-        summary.append({"label": label, "status": "ok" if rc == 0 else f"fail_rc{rc}",
-                        "runtime_s": rt})
+        status = "ok" if rc == 0 else f"fail_rc{rc}"
+        if "DATASAIL_SOLVER_LIMITED" in output:
+            status = "solver_limited"
+        elif "mmseqs not on PATH" in output or "MMseqs is not installed" in output:
+            status = "tool_unavailable_mmseqs"
+        summary.append({"label": label, "status": status, "runtime_s": rt})
 
     # Quality scoring per split.
     qA = data_dir / "table_split_quality_modeA.csv"

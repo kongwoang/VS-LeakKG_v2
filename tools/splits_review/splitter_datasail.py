@@ -58,10 +58,16 @@ def _normalise_assignment(asgn, entity_ids: list[str]) -> dict[str, str]:
     raise TypeError(f"can't normalise assignment of type {type(asgn).__name__}")
 
 
+MAX_DATASAIL_ENTITIES = 8000  # ECFP path needs O(n^2) memory
+
 def run_s1_ligand(manifest: pl.DataFrame, max_sec: int) -> dict[str, str]:
     """Returns ligand_id -> fold."""
     from datasail.sail import datasail
     ligs = manifest.unique(subset=["ligand_id"]).select(["ligand_id", "smiles"])
+    if ligs.height > MAX_DATASAIL_ENTITIES:
+        raise SystemExit(f"DATASAIL_SOLVER_LIMITED: {ligs.height} unique ligands "
+                         f"> {MAX_DATASAIL_ENTITIES}; n^2 similarity matrix exceeds RAM. "
+                         f"Marked solver-limited per the protocol.")
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         ldf = td / "ligands.tsv"
@@ -118,6 +124,9 @@ def run_s2(manifest: pl.DataFrame, protein_meta: Path | None,
     meta = pl.read_parquet(protein_meta).filter(pl.col("sequence").is_not_null())
 
     ligs = manifest.unique(subset=["ligand_id"]).select(["ligand_id", "smiles"])
+    if ligs.height > MAX_DATASAIL_ENTITIES:
+        raise SystemExit(f"DATASAIL_SOLVER_LIMITED: {ligs.height} unique ligands "
+                         f"> {MAX_DATASAIL_ENTITIES}; S2 ECFP n^2 matrix too large.")
     inter = manifest.select(["ligand_id", "target_id"]).unique()
 
     with tempfile.TemporaryDirectory() as td:
