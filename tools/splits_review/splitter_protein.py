@@ -95,15 +95,16 @@ def main() -> int:
         choice = max(deficits, key=deficits.get)
         c_to_fold[row["_clu"]] = choice
         have[choice] += row["n"]
+    input_hash = hash_manifest_slice(manifest)
     rows = []
     for r in manifest.iter_rows(named=True):
         rows.append({
             "example_id": r["example_id"], "target_id": r["target_id"],
             "ligand_id":  r["ligand_id"],  "label":     int(r["label"]),
             "fold":       c_to_fold[r["_clu"]],
-            "input_hash": hash_manifest_slice(manifest),
+            "input_hash": input_hash,
         })
-    write_split(rows, args.out, input_hash=hash_manifest_slice(manifest))
+    write_split(rows, args.out, input_hash=input_hash)
     return 0
 
 
